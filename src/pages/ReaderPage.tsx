@@ -132,25 +132,24 @@ function applyReaderStylesToDocument(
   }
 
   styleEl.textContent = `
-    html, body {
-      overflow: hidden !important;
+    html, body, body * {
+      font-family: ${options.fontFamily} !important;
+      box-sizing: border-box !important;
+    }
+
+    body, body * {
+      line-height: ${options.lineHeight} !important;
     }
 
     body {
       margin: 0 !important;
-      font-family: ${options.fontFamily} !important;
       color: ${options.textColor} !important;
       background: transparent !important;
-      line-height: ${options.lineHeight} !important;
     }
 
-    p, div, li, blockquote, span,
-    h1, h2, h3, h4, h5, h6, a {
-      font-family: ${options.fontFamily} !important;
+    p, div, li, blockquote,
+    h1, h2, h3, h4, h5, h6 {
       line-height: ${options.lineHeight} !important;
-      overflow-wrap: anywhere !important;
-      word-break: break-word !important;
-      hyphens: auto !important;
     }
 
     h1, h2, h3, h4, h5, h6 {
@@ -347,7 +346,8 @@ export function ReaderPage() {
     rendition.themes.default({
       html: `font-family: ${font.fontFamily} !important;`,
       body: `color: ${background.textColor} !important; line-height: ${lineHeight} !important; background: transparent !important;`,
-      'p, div, li, blockquote, span, a': `font-family: ${font.fontFamily} !important; line-height: ${lineHeight} !important; overflow-wrap: anywhere !important; word-break: break-word !important; hyphens: auto !important;`,
+      'body, body *': `font-family: ${font.fontFamily} !important;`,
+      'body *': `line-height: ${lineHeight} !important;`,
       p: `line-height: ${lineHeight} !important; margin: 0 0 1em;`,
       'div, li, blockquote': `line-height: ${lineHeight} !important;`,
       'h1, h2, h3, h4, h5, h6': `color: ${background.textColor} !important; line-height: ${lineHeight} !important;`,
