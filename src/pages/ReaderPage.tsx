@@ -1,4 +1,9 @@
-import ePub, { type EpubBook, type EpubRendition, type EpubRenditionLocation } from 'epubjs'
+import ePub, {
+  type EpubBook,
+  type EpubRendition,
+  type EpubRenditionLocation,
+  type EpubSection,
+} from 'epubjs'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ChapterDrawer } from '../components/ChapterDrawer'
@@ -8,6 +13,7 @@ import {
   getBookBlob,
   saveReadingProgress,
   updateLastOpenedAt,
+  type ChapterItem,
   type BookRecord,
 } from '../utils/bookStorage'
 import { FONT_OPTIONS } from '../utils/fontOptions'
@@ -162,6 +168,67 @@ function applyReaderStylesToDocument(
   `
 }
 
+interface ReaderSearchResult {
+  cfi: string
+  excerpt: string
+  chapterLabel: string
+}
+
+function normalizeHref(href?: string): string {
+  if (!href) return ''
+
+  try {
+    return decodeURIComponent(href).split('#')[0].trim()
+  } catch {
+    return href.split('#')[0].trim()
+  }
+}
+
+function normalizeSearchText(value: string): string {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+function buildChapterLabelMap(chapters: ChapterItem[]) {
+  return new Map(
+    chapters.map((chapter) => [normalizeHref(chapter.href), chapter.label.trim() || '未命名章节']),
+  )
+}
+
+async function buildSearchResults(
+  sections: EpubSection[],
+  chapterMap: Map<string, string>,
+  query: string,
+  book: EpubBook,
+): Promise<ReaderSearchResult[]> {
+  const results: ReaderSearchResult[] = []
+  let lastChapterLabel = '开始'
+
+  for (const [index, section] of sections.entries()) {
+    if (section.linear === false) continue
+
+    const sectionHref = normalizeHref(section.href)
+    const chapterLabel = chapterMap.get(sectionHref) ?? lastChapterLabel ?? `章节 ${index + 1}`
+    lastChapterLabel = chapterLabel
+
+    try {
+      await section.load(book.load.bind(book))
+      const matches = section.search(query)
+
+      results.push(
+        ...matches.map((match) => ({
+          cfi: match.cfi,
+          excerpt: normalizeSearchText(match.excerpt),
+          chapterLabel,
+        })),
+      )
+    } finally {
+      section.unload()
+    }
+  }
+
+  return results
+}
+
 export function ReaderPage() {
   const { bookId } = useParams<{ bookId: string }>()
   const navigate = useNavigate()
@@ -171,6 +238,7 @@ export function ReaderPage() {
   const bookBlobRef = useRef<Blob | null>(null)
   const locationSaveTimerRef = useRef<number | null>(null)
   const initAttemptedRef = useRef(false)
+  const activeSearchHighlightCfiRef = useRef<string | null>(null)
 
   const [book, setBook] = useState<BookRecord | null>(null)
   const [loadingMessage, setLoadingMessage] = useState('加载中……')
@@ -180,6 +248,11 @@ export function ReaderPage() {
   const [currentHref, setCurrentHref] = useState<string>()
   const [chapterOpen, setChapterOpen] = useState(false)
   const [toolbarVisible, setToolbarVisible] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searching, setSearching] = useState(false)
+  const [searchError, setSearchError] = useState('')
+  const [searchResults, setSearchResults] = useState<ReaderSearchResult[]>([])
 
   const initialPrefs = useMemo(() => getReaderPreferences(), [])
   const [fontId, setFontId] = useState(initialPrefs.fontId)
@@ -191,6 +264,40 @@ export function ReaderPage() {
   )
 
   const background = getReaderBackground(colorId, backgroundVariantId)
+
+  const clearSearchHighlight = () => {
+    const rendition = renditionRef.current
+    const currentHighlightCfi = activeSearchHighlightCfiRef.current
+    if (!rendition || !currentHighlightCfi) return
+
+    rendition.annotations.remove(currentHighlightCfi, 'highlight')
+    activeSearchHighlightCfiRef.current = null
+  }
+
+  const applySearchHighlight = (cfi: string | null) => {
+    const rendition = renditionRef.current
+    if (!rendition) return
+
+    const currentHighlightCfi = activeSearchHighlightCfiRef.current
+    if (currentHighlightCfi && currentHighlightCfi !== cfi) {
+      rendition.annotations.remove(currentHighlightCfi, 'highlight')
+    }
+
+    if (!cfi) {
+      activeSearchHighlightCfiRef.current = null
+      return
+    }
+
+    rendition.annotations.highlight(cfi, {}, undefined, 'kunde-search-highlight', {
+      fill: '#fde047',
+      'fill-opacity': '0.45',
+      'mix-blend-mode': 'multiply',
+      stroke: '#facc15',
+      'stroke-opacity': '0.08',
+      'stroke-width': '0.6',
+    })
+    activeSearchHighlightCfiRef.current = cfi
+  }
 
   useEffect(() => {
     saveReaderPreferences({
@@ -213,6 +320,12 @@ export function ReaderPage() {
       setCurrentHref(undefined)
       setToolbarVisible(false)
       setChapterOpen(false)
+      setSearchOpen(false)
+      setSearchQuery('')
+      setSearchResults([])
+      setSearchError('')
+      setSearching(false)
+      activeSearchHighlightCfiRef.current = null
       initAttemptedRef.current = false
 
       try {
@@ -278,6 +391,8 @@ export function ReaderPage() {
         const toggleToolbar = () => {
           setToolbarVisible((visible) => !visible)
           setChapterOpen(false)
+          setSearchOpen(false)
+          setSearching(false)
         }
         const goPrev = () => {
           void renditionRef.current?.prev()
@@ -288,6 +403,8 @@ export function ReaderPage() {
         const closePanels = () => {
           setChapterOpen(false)
           setToolbarVisible(false)
+          setSearchOpen(false)
+          setSearching(false)
         }
 
         const onRelocated = (location: EpubRenditionLocation) => {
@@ -320,6 +437,7 @@ export function ReaderPage() {
         await rendition.display(book.locationCfi || undefined)
         attachIframeClickHandlers(readerRef.current, toggleToolbar)
         attachIframeKeyHandlers(readerRef.current, goPrev, goNext, closePanels)
+        applySearchHighlight(activeSearchHighlightCfiRef.current)
         setIsPreparing(false)
       } catch (initError) {
         setError(initError instanceof Error ? initError.message : '阅读器初始化失败')
@@ -383,6 +501,45 @@ export function ReaderPage() {
   }, [fontId, fontSize, lineHeight, background.textColor, background.linkColor])
 
   useEffect(() => {
+    applySearchHighlight(activeSearchHighlightCfiRef.current)
+  }, [background.isDarkScheme])
+
+  useEffect(() => {
+    const epub = epubBookRef.current
+    const query = normalizeSearchText(searchQuery)
+
+    if (!searchOpen) return
+
+    if (!epub || !book || !query) return
+
+    let cancelled = false
+    const searchTimer = window.setTimeout(() => {
+      setSearching(true)
+      setSearchError('')
+
+      void buildSearchResults(epub.spine.spineItems, buildChapterLabelMap(book.chapters), query, epub)
+        .then((results) => {
+          if (cancelled) return
+          setSearchResults(results)
+        })
+        .catch((searchLoadError) => {
+          if (cancelled) return
+          setSearchResults([])
+          setSearchError(searchLoadError instanceof Error ? searchLoadError.message : '搜索失败，请稍后重试')
+        })
+        .finally(() => {
+          if (cancelled) return
+          setSearching(false)
+        })
+    }, 220)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(searchTimer)
+    }
+  }, [book, searchOpen, searchQuery])
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (shouldIgnoreKeydownTarget(event.target)) return
 
@@ -408,6 +565,8 @@ export function ReaderPage() {
       if (event.key === 'Escape') {
         setChapterOpen(false)
         setToolbarVisible(false)
+        setSearchOpen(false)
+        setSearching(false)
       }
     }
 
@@ -464,6 +623,7 @@ export function ReaderPage() {
         onClose={() => setChapterOpen(false)}
         onSelect={(href) => {
           setChapterOpen(false)
+          clearSearchHighlight()
           void renditionRef.current?.display(href)
         }}
       />
@@ -474,7 +634,7 @@ export function ReaderPage() {
           event.stopPropagation()
           navigate('/')
         }}
-        className={`absolute left-6 top-6 z-50 rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-lg transition-all ${
+        className={`absolute left-6 top-6 z-50 rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-blue-900/20 transition-all hover:bg-blue-500 ${
           toolbarVisible ? 'translate-y-0 opacity-100' : '-translate-y-4 opacity-0 pointer-events-none'
         }`}
       >
@@ -482,10 +642,107 @@ export function ReaderPage() {
       </button>
 
       <div
+        className={`absolute left-1/2 top-6 z-[55] w-[min(56rem,calc(100vw-2rem))] -translate-x-1/2 transition-all duration-300 ${
+          searchOpen ? 'translate-y-0 opacity-100' : '-translate-y-4 opacity-0 pointer-events-none'
+        }`}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div
+          className="overflow-hidden rounded-[1.75rem] border shadow-[0_20px_60px_rgba(15,23,42,0.24)] backdrop-blur-xl"
+          style={{
+            backgroundColor: background.surfaceOverlay,
+            borderColor: background.borderColor,
+            color: background.textColor,
+          }}
+        >
+          <div
+            className="flex items-center gap-3 border-b px-5 py-4"
+            style={{ borderColor: background.borderColor }}
+          >
+            <span className="text-xl leading-none">🔍</span>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(event) => {
+                const nextQuery = event.target.value
+                setSearchQuery(nextQuery)
+
+                if (!normalizeSearchText(nextQuery)) {
+                  setSearching(false)
+                  setSearchError('')
+                  setSearchResults([])
+                }
+              }}
+              placeholder="搜索正文中的关键词"
+              className="flex-1 bg-transparent text-sm outline-none placeholder:opacity-50"
+              autoFocus={searchOpen}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setSearchOpen(false)
+                setSearching(false)
+              }}
+              className={`rounded-full px-3 py-1 text-xs transition ${
+                background.isDarkScheme ? 'bg-white/10 hover:bg-white/15' : 'bg-black/5 hover:bg-black/10'
+              }`}
+            >
+              关闭
+            </button>
+          </div>
+
+          <div className="max-h-[22rem] overflow-y-auto px-3 py-3">
+            {!normalizeSearchText(searchQuery) && (
+              <div className="px-3 py-8 text-center text-sm opacity-65">输入关键词后即可检索整本书</div>
+            )}
+
+            {normalizeSearchText(searchQuery) && searching && (
+              <div className="px-3 py-8 text-center text-sm opacity-65">正在搜索...</div>
+            )}
+
+            {searchError && !searching && (
+              <div className="px-3 py-8 text-center text-sm text-rose-500">{searchError}</div>
+            )}
+
+            {!searching && !searchError && normalizeSearchText(searchQuery) && searchResults.length === 0 && (
+              <div className="px-3 py-8 text-center text-sm opacity-65">没有找到相关内容</div>
+            )}
+
+            {!searching && !searchError && searchResults.length > 0 && (
+              <div className="space-y-2">
+                {searchResults.map((item) => (
+                  <button
+                    key={item.cfi}
+                    type="button"
+                    onClick={() => {
+                      setSearchOpen(false)
+                      setToolbarVisible(false)
+                      setChapterOpen(false)
+                      setSearching(false)
+                      applySearchHighlight(item.cfi)
+                      void renditionRef.current?.display(item.cfi)
+                    }}
+                    className={`flex w-full items-start gap-4 rounded-2xl px-3 py-3 text-left transition ${
+                      background.isDarkScheme ? 'hover:bg-white/8' : 'hover:bg-black/5'
+                    }`}
+                  >
+                    <span className="w-32 shrink-0 text-xs font-medium opacity-70">{item.chapterLabel}</span>
+                    <span className="min-w-0 flex-1 text-sm leading-6">{item.excerpt}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div
         className="absolute inset-0 z-10"
         onClick={() => {
           setToolbarVisible((visible) => !visible)
           setChapterOpen(false)
+          setSearchOpen(false)
+          setSearching(false)
         }}
       >
         <div
@@ -510,6 +767,17 @@ export function ReaderPage() {
         onOpenChapters={() => {
           setToolbarVisible(true)
           setChapterOpen(true)
+          setSearchOpen(false)
+          setSearching(false)
+        }}
+        onOpenSearch={() => {
+          setToolbarVisible(true)
+          setChapterOpen(false)
+          setSearchOpen(true)
+          setSearchError('')
+          if (!normalizeSearchText(searchQuery)) {
+            setSearchResults([])
+          }
         }}
         onProgressChange={handleProgressChange}
         onFontSizeChange={setFontSize}

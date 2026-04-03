@@ -22,6 +22,7 @@ interface ReaderToolbarProps {
   colorId: ReaderColorId
   backgroundVariantId: ReaderBackgroundVariantId
   onOpenChapters: () => void
+  onOpenSearch: () => void
   onProgressChange: (value: number) => void
   onFontSizeChange: (value: number) => void
   onLineHeightChange: (value: number) => void
@@ -39,6 +40,7 @@ export function ReaderToolbar({
   colorId,
   backgroundVariantId,
   onOpenChapters,
+  onOpenSearch,
   onProgressChange,
   onFontSizeChange,
   onLineHeightChange,
@@ -85,18 +87,18 @@ export function ReaderToolbar({
           color: currentBackground.textColor,
         }}
       >
-        <div className="mx-auto max-w-6xl px-6 py-3">
-          <div className="flex items-stretch justify-center gap-10">
+        <div className="mx-auto max-w-6xl px-5 py-2">
+          <div className="flex items-stretch justify-center gap-6">
             <button
               type="button"
               onClick={onOpenChapters}
-              className={`flex min-w-[3.2rem] flex-col items-center gap-1.5 rounded-xl p-2.5 transition ${hoverClass}`}
+              className={`flex min-w-[2.9rem] flex-col items-center gap-1 rounded-xl px-2 py-1.5 transition ${hoverClass}`}
               title="章节目录"
             >
-              <div className="flex h-8 w-8 flex-col items-center justify-center gap-1">
-                <span className="h-0.5 w-5 rounded-full bg-current" />
-                <span className="h-0.5 w-5 rounded-full bg-current" />
-                <span className="h-0.5 w-5 rounded-full bg-current" />
+              <div className="flex h-7 w-7 flex-col items-center justify-center gap-1">
+                <span className="h-0.5 w-[1.15rem] rounded-full bg-current" />
+                <span className="h-0.5 w-[1.15rem] rounded-full bg-current" />
+                <span className="h-0.5 w-[1.15rem] rounded-full bg-current" />
               </div>
               <span className="text-[10px] leading-none">目录</span>
             </button>
@@ -106,19 +108,34 @@ export function ReaderToolbar({
                 key={key}
                 type="button"
                 onClick={() => setExpanded((prev) => (prev === key ? null : key))}
-                className={`flex min-w-[3.2rem] flex-col items-center gap-1.5 rounded-xl p-2.5 transition ${
+                className={`flex min-w-[2.9rem] flex-col items-center gap-1 rounded-xl px-2 py-1.5 transition ${
                   expanded === key ? activeClass : hoverClass
                 }`}
                 title={label}
               >
-                <div className="flex h-8 items-center justify-center">{icon}</div>
+                <div className="flex h-7 items-center justify-center">{icon}</div>
                 <span className="text-[10px] leading-none">{label}</span>
               </button>
             ))}
+
+            <button
+              type="button"
+              onClick={onOpenSearch}
+              className={`flex min-w-[2.9rem] flex-col items-center gap-1 rounded-xl px-2 py-1.5 transition ${hoverClass}`}
+              title="搜索"
+            >
+              <div className="flex h-7 w-7 items-center justify-center">
+                <span className="relative block h-5 w-5">
+                  <span className="absolute left-0 top-0 h-3.5 w-3.5 rounded-full border-[2.5px] border-current" />
+                  <span className="absolute bottom-[1px] right-0 h-2.5 w-1 origin-bottom rotate-[-45deg] rounded-full bg-current" />
+                </span>
+              </div>
+              <span className="text-[10px] leading-none">搜索</span>
+            </button>
           </div>
 
           {expanded && (
-            <div className="mt-3 border-t pt-3" style={{ borderColor: currentBackground.borderColor }}>
+            <div className="mt-2 border-t pt-2" style={{ borderColor: currentBackground.borderColor }}>
               {expanded === 'progress' && (
                 <div className="flex items-center gap-3">
                   <span className="w-10 shrink-0 text-xs opacity-75">进度</span>
@@ -138,7 +155,7 @@ export function ReaderToolbar({
               )}
 
               {expanded === 'font' && (
-                <div className="space-y-3">
+                <div className="space-y-2.5">
                   <div className="flex items-center gap-3">
                     <span className="w-10 shrink-0 text-xs opacity-75">字号</span>
                     <input
@@ -167,13 +184,13 @@ export function ReaderToolbar({
                       {lineHeight.toFixed(1)}
                     </span>
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-1.5">
                     {FONT_OPTIONS.map((font) => (
                       <button
                         key={font.id}
                         type="button"
                         onClick={() => onFontChange(font.id)}
-                        className={`rounded-xl px-3 py-1.5 text-sm transition ${
+                        className={`rounded-xl px-2.5 py-1 text-sm transition ${
                           fontId === font.id
                             ? 'bg-blue-500 text-white'
                             : currentBackground.isDarkScheme
@@ -189,16 +206,16 @@ export function ReaderToolbar({
               )}
 
               {expanded === 'bg' && (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   <div>
                     <div className="mb-2 text-xs opacity-75">颜色</div>
-                    <div className="grid grid-cols-4 gap-3">
+                    <div className="grid grid-cols-4 gap-2">
                       {READER_COLOR_OPTIONS.map((option) => (
                         <button
                           key={option.id}
                           type="button"
                           onClick={() => onColorChange(option.id)}
-                          className={`relative h-16 overflow-hidden rounded-[1.25rem] border transition ${
+                          className={`relative h-14 overflow-hidden rounded-[1.1rem] border transition ${
                             colorId === option.id ? 'scale-[1.02] shadow-lg' : 'hover:-translate-y-0.5'
                           }`}
                           style={{
@@ -221,7 +238,7 @@ export function ReaderToolbar({
                   </div>
                   <div>
                     <div className="mb-2 text-xs opacity-75">背景</div>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-3 gap-2">
                       {READER_BACKGROUND_VARIANTS.map((variant) => {
                         const preview = getReaderBackground(colorId, variant.id)
                         const selected = variant.id === backgroundVariantId
@@ -230,7 +247,7 @@ export function ReaderToolbar({
                             key={variant.id}
                             type="button"
                             onClick={() => onBackgroundVariantChange(variant.id)}
-                            className={`relative h-24 overflow-hidden rounded-[1.25rem] border transition ${
+                            className={`relative h-20 overflow-hidden rounded-[1.1rem] border transition ${
                               selected ? 'scale-[1.02] shadow-lg' : 'hover:-translate-y-0.5'
                             }`}
                             style={{
@@ -250,7 +267,7 @@ export function ReaderToolbar({
                                     : 'rgba(255,255,255,0.1)',
                               }}
                             />
-                            <span className="absolute bottom-3 left-3 text-xs font-medium">
+                            <span className="absolute bottom-2.5 left-2.5 text-xs font-medium">
                               {variant.label}
                             </span>
                           </button>
