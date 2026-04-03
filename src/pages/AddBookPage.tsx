@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { saveImportedBook } from '../utils/bookStorage'
 
@@ -12,6 +12,28 @@ export function AddBookPage() {
   const [dragging, setDragging] = useState(false)
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState('')
+  const [duplicateNoticeVisible, setDuplicateNoticeVisible] = useState(false)
+  const duplicateNoticeTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (duplicateNoticeTimerRef.current !== null) {
+        window.clearTimeout(duplicateNoticeTimerRef.current)
+      }
+    }
+  }, [])
+
+  const showDuplicateNotice = () => {
+    if (duplicateNoticeTimerRef.current !== null) {
+      window.clearTimeout(duplicateNoticeTimerRef.current)
+    }
+
+    setDuplicateNoticeVisible(true)
+    duplicateNoticeTimerRef.current = window.setTimeout(() => {
+      setDuplicateNoticeVisible(false)
+      duplicateNoticeTimerRef.current = null
+    }, 1000)
+  }
 
   const importFile = async (file: File | null) => {
     if (!file) return
@@ -23,7 +45,11 @@ export function AddBookPage() {
     setImporting(true)
     setError('')
     try {
-      await saveImportedBook(file)
+      const result = await saveImportedBook(file)
+      if (result.isDuplicate) {
+        showDuplicateNotice()
+        await new Promise((resolve) => window.setTimeout(resolve, 1000))
+      }
       navigate('/')
     } catch (importError) {
       setError(importError instanceof Error ? importError.message : '导入失败，请换一本书再试。')
@@ -34,6 +60,13 @@ export function AddBookPage() {
 
   return (
     <div className="min-h-screen bg-transparent px-6 py-6 text-slate-900">
+      <div
+        className={`pointer-events-none fixed left-1/2 top-6 z-50 -translate-x-1/2 rounded-full bg-slate-900/90 px-5 py-3 text-sm font-semibold text-white shadow-lg backdrop-blur transition-all duration-200 ${
+          duplicateNoticeVisible ? 'translate-y-0 opacity-100' : '-translate-y-3 opacity-0'
+        }`}
+      >
+        这本书已经导入过了
+      </div>
       <div className="flex min-h-[calc(100vh-3rem)] flex-col">
         <div className="mb-6 flex items-center justify-between">
           <Link
