@@ -144,6 +144,7 @@ function applyReaderStylesToDocument(
     }
 
     body, body * {
+      color: ${options.textColor} !important;
       line-height: ${options.lineHeight} !important;
     }
 
@@ -464,8 +465,8 @@ export function ReaderPage() {
     rendition.themes.default({
       html: `font-family: ${font.fontFamily} !important;`,
       body: `color: ${background.textColor} !important; line-height: ${lineHeight} !important; background: transparent !important;`,
-      'body, body *': `font-family: ${font.fontFamily} !important;`,
-      'body *': `line-height: ${lineHeight} !important;`,
+      'body, body *': `font-family: ${font.fontFamily} !important; color: ${background.textColor} !important;`,
+      'body *': `line-height: ${lineHeight} !important; color: ${background.textColor} !important;`,
       p: `line-height: ${lineHeight} !important; margin: 0 0 1em;`,
       'div, li, blockquote': `line-height: ${lineHeight} !important;`,
       'h1, h2, h3, h4, h5, h6': `color: ${background.textColor} !important; line-height: ${lineHeight} !important;`,
