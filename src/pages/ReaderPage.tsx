@@ -4,7 +4,7 @@ import ePub, {
   type EpubRenditionLocation,
   type EpubSection,
 } from 'epubjs'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ChapterDrawer } from '../components/ChapterDrawer'
 import { ReaderToolbar } from '../components/ReaderToolbar'
@@ -24,6 +24,257 @@ import {
   type ReaderBackgroundVariantId,
   type ReaderColorId,
 } from '../utils/readerBackgrounds'
+
+const RESTORE_DISPLAY_TIMEOUT_MS = 6000
+const RENDITION_DISPLAY_ERROR_EVENT = 'displayerror'
+const READER_DEBUG_EVENT = 'kunde-reader-debug'
+const READER_DEBUG_VERSION = 'reader-debug-v2'
+
+type RenditionEventCallback = (...args: unknown[]) => void
+
+type RenditionWithEvents = EpubRendition & {
+  on: (event: string, callback: RenditionEventCallback) => void
+  off?: (event: string, callback: RenditionEventCallback) => void
+}
+
+interface ReaderDebugEntry {
+  level: 'info' | 'warn'
+  message: string
+  payload?: Record<string, unknown>
+  createdAt: number
+}
+
+function emitReaderDebugEntry(level: 'info' | 'warn', message: string, payload?: Record<string, unknown>) {
+  if (!import.meta.env.DEV || typeof window === 'undefined') return
+
+  window.dispatchEvent(
+    new CustomEvent<ReaderDebugEntry>(READER_DEBUG_EVENT, {
+      detail: {
+        level,
+        message,
+        payload,
+        createdAt: Date.now(),
+      },
+    }),
+  )
+}
+
+function clearWindowTimer(timerRef: MutableRefObject<number | null>) {
+  if (timerRef.current !== null) {
+    window.clearTimeout(timerRef.current)
+    timerRef.current = null
+  }
+}
+
+function logReaderPhaseTiming(label: string, startedAt: number) {
+  if (!import.meta.env.DEV) return
+
+  const duration = Math.round(performance.now() - startedAt)
+  console.info(`[ReaderPage] ${label}: ${duration}ms`)
+  emitReaderDebugEntry('info', `${label}: ${duration}ms`)
+}
+
+function logReaderDebug(label: string, payload?: Record<string, unknown>) {
+  if (!import.meta.env.DEV) return
+
+  if (payload) {
+    console.info(`[ReaderPage] ${label}`, payload)
+    emitReaderDebugEntry('info', label, payload)
+    return
+  }
+
+  console.info(`[ReaderPage] ${label}`)
+  emitReaderDebugEntry('info', label)
+}
+
+function logReaderWarn(label: string, payload?: Record<string, unknown>) {
+  if (!import.meta.env.DEV) return
+
+  if (payload) {
+    console.warn(`[ReaderPage] ${label}`, payload)
+    emitReaderDebugEntry('warn', label, payload)
+    return
+  }
+
+  console.warn(`[ReaderPage] ${label}`)
+  emitReaderDebugEntry('warn', label)
+}
+
+async function logReaderCheckpoint(label: string, payload?: Record<string, unknown>) {
+  logReaderDebug(label, payload)
+
+  if (!import.meta.env.DEV) return
+
+  await new Promise<void>((resolve) => {
+    window.setTimeout(resolve, 0)
+  })
+}
+
+function normalizeReaderError(error: unknown, fallbackMessage: string) {
+  return error instanceof Error ? error : new Error(fallbackMessage)
+}
+
+function normalizeLoadingProgress(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)))
+}
+
+function getInitialDisplayTarget(savedLocationCfi: string | null) {
+  if (!savedLocationCfi) {
+    return {
+      target: undefined,
+      restoreMode: 'default' as const,
+      savedLocationCfi: null,
+    }
+  }
+
+  // Avoid touching saved CFI during startup. In practice this sync parse can
+  // hang the main thread before we even reach rendition.display().
+  return {
+    target: undefined,
+    restoreMode: 'default_from_saved_cfi' as const,
+    savedLocationCfi,
+  }
+}
+
+function syncCanPersistLocation(
+  canPersistLocationRef: MutableRefObject<boolean>,
+  initialDisplaySettledRef: MutableRefObject<boolean>,
+  locationsReadyRef: MutableRefObject<boolean>,
+) {
+  canPersistLocationRef.current =
+    initialDisplaySettledRef.current && locationsReadyRef.current
+}
+
+function updateInitialDisplaySettled(
+  value: boolean,
+  initialDisplaySettledRef: MutableRefObject<boolean>,
+  canPersistLocationRef: MutableRefObject<boolean>,
+  locationsReadyRef: MutableRefObject<boolean>,
+) {
+  initialDisplaySettledRef.current = value
+  syncCanPersistLocation(canPersistLocationRef, initialDisplaySettledRef, locationsReadyRef)
+}
+
+function updateLocationsReady(
+  value: boolean,
+  locationsReadyRef: MutableRefObject<boolean>,
+  canPersistLocationRef: MutableRefObject<boolean>,
+  initialDisplaySettledRef: MutableRefObject<boolean>,
+  setLocationsReady: (value: boolean) => void,
+) {
+  locationsReadyRef.current = value
+  syncCanPersistLocation(canPersistLocationRef, initialDisplaySettledRef, locationsReadyRef)
+  setLocationsReady(value)
+}
+
+function resetInitializationGuards(
+  locationSaveTimerRef: MutableRefObject<number | null>,
+  displayTimeoutRef: MutableRefObject<number | null>,
+  displayAttemptIdRef: MutableRefObject<number>,
+  canPersistLocationRef: MutableRefObject<boolean>,
+  initialDisplaySettledRef: MutableRefObject<boolean>,
+  locationsReadyRef: MutableRefObject<boolean>,
+  userTriggeredLocationSaveRef: MutableRefObject<boolean>,
+) {
+  clearWindowTimer(locationSaveTimerRef)
+  clearWindowTimer(displayTimeoutRef)
+  displayAttemptIdRef.current += 1
+  canPersistLocationRef.current = false
+  initialDisplaySettledRef.current = false
+  locationsReadyRef.current = false
+  userTriggeredLocationSaveRef.current = false
+}
+
+async function waitForInitialDisplay(
+  rendition: EpubRendition,
+  target: string | undefined,
+  hasSavedLocation: boolean,
+  displayAttemptIdRef: MutableRefObject<number>,
+  displayTimeoutRef: MutableRefObject<number | null>,
+  restoreMode: 'default' | 'default_from_saved_cfi',
+) {
+  const startedAt = performance.now()
+  const renditionWithEvents = rendition as RenditionWithEvents
+  const attemptId = displayAttemptIdRef.current + 1
+  displayAttemptIdRef.current = attemptId
+
+  logReaderDebug('initial display:start', {
+    attemptId,
+    hasSavedLocation,
+    target,
+    restoreMode,
+  })
+
+  return new Promise<void>((resolve, reject) => {
+    let settled = false
+
+    const cleanup = () => {
+      clearWindowTimer(displayTimeoutRef)
+      renditionWithEvents.off?.(RENDITION_DISPLAY_ERROR_EVENT, onDisplayError)
+    }
+
+    const finish = (status: 'success' | 'error' | 'timeout', error?: Error) => {
+      if (settled || displayAttemptIdRef.current !== attemptId) return
+
+      settled = true
+      cleanup()
+      if (status === 'success') {
+        logReaderDebug('initial display:success', { attemptId, target, restoreMode })
+      } else {
+        logReaderWarn(`initial display:${status}`, {
+          attemptId,
+          target,
+          restoreMode,
+          message: error?.message,
+        })
+      }
+      logReaderPhaseTiming(
+        status === 'success' ? 'initial display' : `initial display (${status})`,
+        startedAt,
+      )
+
+      if (error) {
+        reject(error)
+        return
+      }
+
+      resolve()
+    }
+
+    const onDisplayError: RenditionEventCallback = (error) => {
+      logReaderWarn('initial display:displayerror event', {
+        attemptId,
+        target,
+        restoreMode,
+        error,
+      })
+      finish('error', normalizeReaderError(error, 'Failed to restore the saved location.'))
+    }
+
+    renditionWithEvents.on(RENDITION_DISPLAY_ERROR_EVENT, onDisplayError)
+
+    if (hasSavedLocation) {
+      displayTimeoutRef.current = window.setTimeout(() => {
+        finish('timeout', new Error('Restore timed out. Please retry or start from the beginning.'))
+      }, RESTORE_DISPLAY_TIMEOUT_MS)
+    }
+
+    void rendition
+      .display(target)
+      .then(() => {
+        finish('success')
+      })
+      .catch((error) => {
+        logReaderWarn('initial display:display promise rejected', {
+          attemptId,
+          target,
+          restoreMode,
+          error,
+        })
+        finish('error', normalizeReaderError(error, 'Failed to open the book.'))
+      })
+  })
+}
 
 function getBackgroundLayerStyle(background: ReaderBackground): React.CSSProperties {
   return {
@@ -189,6 +440,15 @@ function normalizeSearchText(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
 }
 
+function getProgressFromCfi(epub: EpubBook, cfi: string, fallback: number): number {
+  try {
+    const nextProgress = epub.locations.percentageFromCfi(cfi) * 100
+    return Number.isFinite(nextProgress) ? nextProgress : fallback
+  } catch {
+    return fallback
+  }
+}
+
 function buildChapterLabelMap(chapters: ChapterItem[]) {
   return new Map(
     chapters.map((chapter) => [normalizeHref(chapter.href), chapter.label.trim() || '未命名章节']),
@@ -238,14 +498,24 @@ export function ReaderPage() {
   const epubBookRef = useRef<EpubBook | null>(null)
   const bookBlobRef = useRef<Blob | null>(null)
   const locationSaveTimerRef = useRef<number | null>(null)
-  const initAttemptedRef = useRef(false)
   const activeSearchHighlightCfiRef = useRef<string | null>(null)
+  const currentLocationCfiRef = useRef<string | null>(null)
+  const progressRef = useRef(0)
+  const locationsReadyRef = useRef(false)
+  const canPersistLocationRef = useRef(false)
+  const initialDisplaySettledRef = useRef(false)
+  const displayTimeoutRef = useRef<number | null>(null)
+  const displayAttemptIdRef = useRef(0)
+  const userTriggeredLocationSaveRef = useRef(false)
 
   const [book, setBook] = useState<BookRecord | null>(null)
+  const [loadingProgress, setLoadingProgress] = useState(0)
   const [loadingMessage, setLoadingMessage] = useState('加载中……')
   const [isPreparing, setIsPreparing] = useState(true)
   const [error, setError] = useState('')
+  const [restoreFailed, setRestoreFailed] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [locationsReady, setLocationsReady] = useState(false)
   const [currentHref, setCurrentHref] = useState<string>()
   const [chapterOpen, setChapterOpen] = useState(false)
   const [toolbarVisible, setToolbarVisible] = useState(false)
@@ -254,6 +524,8 @@ export function ReaderPage() {
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState('')
   const [searchResults, setSearchResults] = useState<ReaderSearchResult[]>([])
+  const [retryNonce, setRetryNonce] = useState(0)
+  const [debugEntries, setDebugEntries] = useState<ReaderDebugEntry[]>([])
 
   const initialPrefs = useMemo(() => getReaderPreferences(), [])
   const [fontId, setFontId] = useState(initialPrefs.fontId)
@@ -265,6 +537,23 @@ export function ReaderPage() {
   )
 
   const background = getReaderBackground(colorId, backgroundVariantId)
+
+  const setProgressValue = (value: number) => {
+    progressRef.current = value
+    setProgress(value)
+  }
+
+  const setLoadingProgressValue = (value: number) => {
+    setLoadingProgress(normalizeLoadingProgress(value))
+  }
+
+  const markNextLocationSaveAsUserTriggered = () => {
+    userTriggeredLocationSaveRef.current = true
+  }
+
+  const clearUserTriggeredLocationSave = () => {
+    userTriggeredLocationSaveRef.current = false
+  }
 
   const clearSearchHighlight = () => {
     const rendition = renditionRef.current
@@ -311,14 +600,43 @@ export function ReaderPage() {
   }, [fontId, fontSize, lineHeight, colorId, backgroundVariantId])
 
   useEffect(() => {
+    if (!import.meta.env.DEV) return
+
+    const handleDebugEvent = (event: Event) => {
+      const detail = (event as CustomEvent<ReaderDebugEntry>).detail
+      if (!detail) return
+
+      setDebugEntries((entries) => [...entries.slice(-7), detail])
+    }
+
+    window.addEventListener(READER_DEBUG_EVENT, handleDebugEvent as EventListener)
+    return () => window.removeEventListener(READER_DEBUG_EVENT, handleDebugEvent as EventListener)
+  }, [])
+
+  useEffect(() => {
     const loadBookData = async () => {
       if (!bookId) return
 
+      const dbLoadStartedAt = performance.now()
+
+      resetInitializationGuards(
+        locationSaveTimerRef,
+        displayTimeoutRef,
+        displayAttemptIdRef,
+        canPersistLocationRef,
+        initialDisplaySettledRef,
+        locationsReadyRef,
+        userTriggeredLocationSaveRef,
+      )
+
       setIsPreparing(true)
+      setLoadingProgressValue(8)
       setLoadingMessage('加载中……')
       setError('')
+      setRestoreFailed(false)
       setBook(null)
       setCurrentHref(undefined)
+      currentLocationCfiRef.current = null
       setToolbarVisible(false)
       setChapterOpen(false)
       setSearchOpen(false)
@@ -326,21 +644,37 @@ export function ReaderPage() {
       setSearchResults([])
       setSearchError('')
       setSearching(false)
+      setDebugEntries([])
       activeSearchHighlightCfiRef.current = null
-      initAttemptedRef.current = false
+      updateInitialDisplaySettled(
+        false,
+        initialDisplaySettledRef,
+        canPersistLocationRef,
+        locationsReadyRef,
+      )
+      updateLocationsReady(
+        false,
+        locationsReadyRef,
+        canPersistLocationRef,
+        initialDisplaySettledRef,
+        setLocationsReady,
+      )
+      setProgressValue(0)
 
       try {
         const [bookRecord, blob] = await Promise.all([getBook(bookId), getBookBlob(bookId)])
+        logReaderPhaseTiming('db load', dbLoadStartedAt)
+        setLoadingProgressValue(30)
         if (!bookRecord || !blob) {
           setError('这本书已经不存在了。')
           setIsPreparing(false)
           return
         }
 
-        await updateLastOpenedAt(bookId)
         bookBlobRef.current = blob
+        currentLocationCfiRef.current = bookRecord.locationCfi
         setBook({ ...bookRecord, lastOpenedAt: Date.now() })
-        setProgress(bookRecord.progressPercent)
+        setProgressValue(bookRecord.progressPercent)
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : '打开失败，请重新导入。')
       }
@@ -349,33 +683,80 @@ export function ReaderPage() {
     void loadBookData()
 
     return () => {
-      if (locationSaveTimerRef.current) {
-        window.clearTimeout(locationSaveTimerRef.current)
-        locationSaveTimerRef.current = null
-      }
+      resetInitializationGuards(
+        locationSaveTimerRef,
+        displayTimeoutRef,
+        displayAttemptIdRef,
+        canPersistLocationRef,
+        initialDisplaySettledRef,
+        locationsReadyRef,
+        userTriggeredLocationSaveRef,
+      )
       renditionRef.current?.destroy()
       renditionRef.current = null
       epubBookRef.current?.destroy()
       epubBookRef.current = null
       bookBlobRef.current = null
-      initAttemptedRef.current = false
+      currentLocationCfiRef.current = null
     }
-  }, [bookId])
+  }, [bookId, retryNonce])
 
   useEffect(() => {
+    let cancelled = false
+
     const initializeReader = async () => {
       if (!bookId || !book || !readerRef.current || !bookBlobRef.current) return
-      if (initAttemptedRef.current) return
 
-      initAttemptedRef.current = true
+      await logReaderCheckpoint('initialize:start', {
+        bookId,
+        hasSavedLocation: Boolean(book.locationCfi),
+        savedLocationCfi: book.locationCfi,
+        debugVersion: READER_DEBUG_VERSION,
+      })
+
+      setLoadingProgressValue(40)
+      updateInitialDisplaySettled(
+        false,
+        initialDisplaySettledRef,
+        canPersistLocationRef,
+        locationsReadyRef,
+      )
+      updateLocationsReady(
+        false,
+        locationsReadyRef,
+        canPersistLocationRef,
+        initialDisplaySettledRef,
+        setLocationsReady,
+      )
       setLoadingMessage('加载中……')
 
       try {
-        const epub = ePub(await bookBlobRef.current.arrayBuffer())
+        const epubReadyStartedAt = performance.now()
+        const epub = ePub(bookBlobRef.current)
+        await logReaderCheckpoint('initialize:epub instance created', { bookId })
         epubBookRef.current = epub
         await epub.ready
-        await epub.locations.generate(1200)
+        logReaderPhaseTiming('epub.ready', epubReadyStartedAt)
+        await logReaderCheckpoint('initialize:epub.ready resolved', { bookId })
+        setLoadingProgressValue(65)
+        await logReaderCheckpoint('initialize:after setLoadingProgress(65)', { bookId })
+        if (cancelled) return
 
+        await logReaderCheckpoint('initialize:select restore target:before', {
+          bookId,
+          savedLocationCfi: book.locationCfi,
+        })
+        const { target: initialDisplayTarget, restoreMode } = getInitialDisplayTarget(
+          book.locationCfi,
+        )
+        await logReaderCheckpoint('initialize:restore target selected', {
+          bookId,
+          savedLocationCfi: book.locationCfi,
+          initialDisplayTarget,
+          restoreMode,
+        })
+
+        await logReaderCheckpoint('initialize:renderTo:before', { bookId })
         const rendition = epub.renderTo(readerRef.current, {
           width: '100%',
           height: '100%',
@@ -386,6 +767,7 @@ export function ReaderPage() {
           snap: true,
           allowScriptedContent: false,
         })
+        await logReaderCheckpoint('initialize:renderTo:after', { bookId })
 
         renditionRef.current = rendition
 
@@ -396,9 +778,11 @@ export function ReaderPage() {
           setSearching(false)
         }
         const goPrev = () => {
+          markNextLocationSaveAsUserTriggered()
           void renditionRef.current?.prev()
         }
         const goNext = () => {
+          markNextLocationSaveAsUserTriggered()
           void renditionRef.current?.next()
         }
         const closePanels = () => {
@@ -410,14 +794,27 @@ export function ReaderPage() {
 
         const onRelocated = (location: EpubRenditionLocation) => {
           const cfi = location.start.cfi
-          const nextProgress = epub.locations.percentageFromCfi(cfi) * 100
-          setProgress(Number.isFinite(nextProgress) ? nextProgress : 0)
+          currentLocationCfiRef.current = cfi
+          const nextProgress = locationsReadyRef.current
+            ? getProgressFromCfi(epub, cfi, progressRef.current)
+            : progressRef.current
+          setProgressValue(nextProgress)
           setCurrentHref(location.start.href)
 
-          if (locationSaveTimerRef.current) {
-            window.clearTimeout(locationSaveTimerRef.current)
+          if (!canPersistLocationRef.current) {
+            clearWindowTimer(locationSaveTimerRef)
+            return
           }
 
+          if (!userTriggeredLocationSaveRef.current) {
+            clearWindowTimer(locationSaveTimerRef)
+            logReaderDebug('location persist:skipped passive relocation', { cfi })
+            return
+          }
+
+          clearUserTriggeredLocationSave()
+
+          clearWindowTimer(locationSaveTimerRef)
           locationSaveTimerRef.current = window.setTimeout(() => {
             void saveReadingProgress(bookId, {
               progressPercent: Number.isFinite(nextProgress) ? nextProgress : 0,
@@ -427,6 +824,7 @@ export function ReaderPage() {
         }
 
         rendition.on('relocated', onRelocated)
+        await logReaderCheckpoint('initialize:relocated listener attached', { bookId })
         ;(rendition as EpubRendition & { on: (event: string, callback: () => void) => void }).on(
           'rendered',
           () => {
@@ -434,18 +832,104 @@ export function ReaderPage() {
             attachIframeKeyHandlers(readerRef.current, goPrev, goNext, closePanels)
           },
         )
+        await logReaderCheckpoint('initialize:rendered listener attached', { bookId })
 
-        await rendition.display(book.locationCfi || undefined)
+        await logReaderCheckpoint('initialize:waitForInitialDisplay:before', {
+          bookId,
+          initialDisplayTarget,
+          restoreMode,
+        })
+        await waitForInitialDisplay(
+          rendition,
+          initialDisplayTarget,
+          Boolean(book.locationCfi),
+          displayAttemptIdRef,
+          displayTimeoutRef,
+          restoreMode,
+        )
+        await logReaderCheckpoint('initialize:waitForInitialDisplay:after', { bookId })
+        if (cancelled) return
+        setLoadingProgressValue(100)
+        updateInitialDisplaySettled(
+          true,
+          initialDisplaySettledRef,
+          canPersistLocationRef,
+          locationsReadyRef,
+        )
         attachIframeClickHandlers(readerRef.current, toggleToolbar)
         attachIframeKeyHandlers(readerRef.current, goPrev, goNext, closePanels)
         applySearchHighlight(activeSearchHighlightCfiRef.current)
         setIsPreparing(false)
+        void updateLastOpenedAt(bookId)
+
+        const locationsStartedAt = performance.now()
+        void epub.locations
+          .generate(1200)
+          .then(() => {
+            logReaderPhaseTiming('locations.generate', locationsStartedAt)
+            if (cancelled || epubBookRef.current !== epub) return
+            updateLocationsReady(
+              true,
+              locationsReadyRef,
+              canPersistLocationRef,
+              initialDisplaySettledRef,
+              setLocationsReady,
+            )
+
+            const currentCfi = currentLocationCfiRef.current
+            if (!currentCfi) return
+
+            const nextProgress = getProgressFromCfi(epub, currentCfi, progressRef.current)
+            setProgressValue(nextProgress)
+          })
+          .catch(() => {
+            logReaderPhaseTiming('locations.generate (failed)', locationsStartedAt)
+            if (cancelled || epubBookRef.current !== epub) return
+            updateLocationsReady(
+              false,
+              locationsReadyRef,
+              canPersistLocationRef,
+              initialDisplaySettledRef,
+              setLocationsReady,
+            )
+          })
       } catch (initError) {
+        if (cancelled) return
+        logReaderWarn('initialize:failed', {
+          bookId,
+          hasSavedLocation: Boolean(book.locationCfi),
+          message: initError instanceof Error ? initError.message : String(initError),
+        })
+        resetInitializationGuards(
+          locationSaveTimerRef,
+          displayTimeoutRef,
+          displayAttemptIdRef,
+          canPersistLocationRef,
+          initialDisplaySettledRef,
+          locationsReadyRef,
+          userTriggeredLocationSaveRef,
+        )
+        updateLocationsReady(
+          false,
+          locationsReadyRef,
+          canPersistLocationRef,
+          initialDisplaySettledRef,
+          setLocationsReady,
+        )
+        renditionRef.current?.destroy()
+        renditionRef.current = null
+        epubBookRef.current?.destroy()
+        epubBookRef.current = null
+        setRestoreFailed(Boolean(book.locationCfi))
+        setIsPreparing(false)
         setError(initError instanceof Error ? initError.message : '阅读器初始化失败')
       }
     }
 
     void initializeReader()
+    return () => {
+      cancelled = true
+    }
   }, [bookId, book])
 
   useEffect(() => {
@@ -553,14 +1037,17 @@ export function ReaderPage() {
 
       if (event.key === 'ArrowLeft') {
         event.preventDefault()
+        userTriggeredLocationSaveRef.current = true
         void renditionRef.current?.prev()
       }
       if (event.key === 'ArrowRight') {
         event.preventDefault()
+        userTriggeredLocationSaveRef.current = true
         void renditionRef.current?.next()
       }
       if (event.key === ' ' || event.key === 'Spacebar') {
         event.preventDefault()
+        userTriggeredLocationSaveRef.current = true
         void renditionRef.current?.next()
       }
       if (event.key === 'Escape') {
@@ -575,12 +1062,50 @@ export function ReaderPage() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
+  const retryRestore = () => {
+    resetInitializationGuards(
+      locationSaveTimerRef,
+      displayTimeoutRef,
+      displayAttemptIdRef,
+      canPersistLocationRef,
+      initialDisplaySettledRef,
+      locationsReadyRef,
+      userTriggeredLocationSaveRef,
+    )
+    setError('')
+    setRestoreFailed(false)
+    setRetryNonce((value) => value + 1)
+  }
+
+  const startFromBeginning = async () => {
+    if (!bookId) return
+
+    resetInitializationGuards(
+      locationSaveTimerRef,
+      displayTimeoutRef,
+      displayAttemptIdRef,
+      canPersistLocationRef,
+      initialDisplaySettledRef,
+      locationsReadyRef,
+      userTriggeredLocationSaveRef,
+    )
+    await saveReadingProgress(bookId, {
+      progressPercent: 0,
+      locationCfi: null,
+    })
+
+    setError('')
+    setRestoreFailed(false)
+    setRetryNonce((value) => value + 1)
+  }
+
   const handleProgressChange = (value: number) => {
     const epub = epubBookRef.current
     const rendition = renditionRef.current
-    if (!epub || !rendition) return
+    if (!epub || !rendition || !locationsReadyRef.current) return
     const target = epub.locations.cfiFromPercentage(value / 100)
-    setProgress(value)
+    setProgressValue(value)
+    markNextLocationSaveAsUserTriggered()
     void rendition.display(target)
   }
 
@@ -589,6 +1114,26 @@ export function ReaderPage() {
       <div className="fixed inset-0 flex items-center justify-center text-slate-700">
         <div className="rounded-3xl bg-white/80 px-8 py-8 text-center shadow-xl">
           <p>{error}</p>
+          {restoreFailed && (
+            <div className="mt-3 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={retryRestore}
+                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                重试
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void startFromBeginning()
+                }}
+                className="rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white"
+              >
+                从头阅读
+              </button>
+            </div>
+          )}
           <button
             type="button"
             onClick={() => navigate('/')}
@@ -625,6 +1170,7 @@ export function ReaderPage() {
         onSelect={(href) => {
           setChapterOpen(false)
           clearSearchHighlight()
+          markNextLocationSaveAsUserTriggered()
           void renditionRef.current?.display(href)
         }}
       />
@@ -721,6 +1267,7 @@ export function ReaderPage() {
                       setChapterOpen(false)
                       setSearching(false)
                       applySearchHighlight(item.cfi)
+                      markNextLocationSaveAsUserTriggered()
                       void renditionRef.current?.display(item.cfi)
                     }}
                     className={`flex w-full items-start gap-4 rounded-2xl px-3 py-3 text-left transition ${
@@ -751,8 +1298,37 @@ export function ReaderPage() {
           className="reader-content h-full w-full"
         />
         {isPreparing && (
-          <div className="absolute inset-0 flex items-center justify-center text-sm opacity-70">
-            {loadingMessage}
+          <div className="absolute inset-0 flex items-center justify-center bg-black/10 px-6">
+            <div className="w-full max-w-sm rounded-3xl bg-white/80 px-6 py-5 shadow-xl backdrop-blur-md">
+              <div className="flex items-center justify-between text-sm text-slate-700">
+                <span>{loadingMessage}</span>
+                <span>{loadingProgress}%</span>
+              </div>
+              <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-slate-200">
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-[width] duration-300 ease-out"
+                  style={{ width: `${loadingProgress}%` }}
+                />
+              </div>
+              {import.meta.env.DEV && debugEntries.length > 0 && (
+                <div className="mt-4 rounded-2xl bg-slate-950/90 px-3 py-3 font-mono text-[11px] leading-5 text-slate-100">
+                  <div className="mb-2 text-[10px] uppercase tracking-[0.18em] text-slate-500">
+                    {READER_DEBUG_VERSION}
+                  </div>
+                  {debugEntries.map((entry) => (
+                    <div key={`${entry.createdAt}-${entry.message}`} className="break-all">
+                      <span className={entry.level === 'warn' ? 'text-amber-300' : 'text-sky-300'}>
+                        [{entry.level}]
+                      </span>{' '}
+                      <span>{entry.message}</span>
+                      {entry.payload && (
+                        <span className="text-slate-400"> {JSON.stringify(entry.payload)}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -760,6 +1336,7 @@ export function ReaderPage() {
       <ReaderToolbar
         visible={toolbarVisible}
         progress={progress}
+        progressReady={locationsReady}
         fontSize={fontSize}
         lineHeight={lineHeight}
         fontId={fontId}

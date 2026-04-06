@@ -16,6 +16,7 @@ const sliderStyles =
 interface ReaderToolbarProps {
   visible: boolean
   progress: number
+  progressReady: boolean
   fontSize: number
   lineHeight: number
   fontId: string
@@ -34,6 +35,7 @@ interface ReaderToolbarProps {
 export function ReaderToolbar({
   visible,
   progress,
+  progressReady,
   fontSize,
   lineHeight,
   fontId,
@@ -145,11 +147,12 @@ export function ReaderToolbar({
                     max="100"
                     step="0.1"
                     value={progress}
+                    disabled={!progressReady}
                     onChange={(event) => onProgressChange(parseFloat(event.target.value))}
-                    className={sliderStyles}
+                    className={`${sliderStyles} ${progressReady ? '' : 'cursor-not-allowed opacity-50'}`}
                   />
                   <span className="w-12 shrink-0 text-right text-xs opacity-75">
-                    {Math.round(progress)}%
+                    {progressReady ? `${Math.round(progress)}%` : '--'}
                   </span>
                 </div>
               )}
