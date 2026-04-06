@@ -29,6 +29,11 @@ export interface BookRecord {
   importFingerprint: string
 }
 
+export interface SaveImportedBookResult {
+  book: BookRecord
+  isDuplicate: boolean
+}
+
 interface BookFileRecord {
   id: string
   file: Blob
@@ -55,8 +60,10 @@ export function subscribeBooksChange(callback: () => void): () => void {
   return () => window.removeEventListener(BOOKS_CHANGE_EVENT, handler)
 }
 
-function createFingerprint(file: File): string {
-  return [file.name, file.size, file.lastModified].join('__')
+async function createFingerprint(fileBuffer: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', fileBuffer)
+  const bytes = Array.from(new Uint8Array(digest))
+  return bytes.map((value) => value.toString(16).padStart(2, '0')).join('')
 }
 
 function normalizeIdentifier(value: unknown): string | null {
@@ -163,17 +170,18 @@ export async function getBookChapters(bookId: string): Promise<ChapterItem[]> {
   return (await getBook(bookId))?.chapters ?? []
 }
 
-export async function saveImportedBook(file: File): Promise<BookRecord> {
+export async function saveImportedBook(file: File): Promise<SaveImportedBookResult> {
   const db = await dbPromise
   const fileBlob = file.slice(0, file.size, file.type || 'application/epub+zip')
-  const epub = ePub(await file.arrayBuffer())
+  const fileBuffer = await file.arrayBuffer()
+  const epub = ePub(fileBuffer)
 
   try {
     await epub.ready
     const metadata = await epub.loaded.metadata
     const navigation = await epub.loaded.navigation
     const identifier = normalizeIdentifier(metadata.identifier)
-    const importFingerprint = createFingerprint(file)
+    const importFingerprint = await createFingerprint(fileBuffer)
     const existingBooks = await db.getAll('books')
     const duplicate = existingBooks.find((item) => {
       if (identifier && item.identifier && item.identifier === identifier) return true
@@ -217,7 +225,10 @@ export async function saveImportedBook(file: File): Promise<BookRecord> {
     await tx.objectStore('files').put({ id: record.id, file: fileBlob })
     await tx.done
     emitBooksChange()
-    return record
+    return {
+      book: record,
+      isDuplicate: Boolean(duplicate),
+    }
   } finally {
     epub.destroy()
   }
