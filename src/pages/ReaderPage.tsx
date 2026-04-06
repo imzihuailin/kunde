@@ -26,6 +26,7 @@ import {
 } from '../utils/readerBackgrounds'
 
 const RESTORE_DISPLAY_TIMEOUT_MS = 6000
+const DEFERRED_RESTORE_TIMEOUT_MS = 3000
 const RENDITION_DISPLAY_ERROR_EVENT = 'displayerror'
 const READER_DEBUG_EVENT = 'kunde-reader-debug'
 const READER_DEBUG_VERSION = 'reader-debug-v2'
@@ -64,6 +65,23 @@ function clearWindowTimer(timerRef: MutableRefObject<number | null>) {
     window.clearTimeout(timerRef.current)
     timerRef.current = null
   }
+}
+
+function persistCurrentReadingProgress(
+  bookId: string | undefined,
+  currentLocationCfiRef: MutableRefObject<string | null>,
+  progressRef: MutableRefObject<number>,
+  initialDisplaySettledRef: MutableRefObject<boolean>,
+) {
+  if (!bookId || !initialDisplaySettledRef.current) return
+
+  const locationCfi = currentLocationCfiRef.current
+  if (!locationCfi) return
+
+  void saveReadingProgress(bookId, {
+    progressPercent: Number.isFinite(progressRef.current) ? progressRef.current : 0,
+    locationCfi,
+  })
 }
 
 function logReaderPhaseTiming(label: string, startedAt: number) {
@@ -191,7 +209,8 @@ async function waitForInitialDisplay(
   hasSavedLocation: boolean,
   displayAttemptIdRef: MutableRefObject<number>,
   displayTimeoutRef: MutableRefObject<number | null>,
-  restoreMode: 'default' | 'default_from_saved_cfi',
+  restoreMode: 'default' | 'default_from_saved_cfi' | 'deferred_saved_cfi',
+  timeoutMs = RESTORE_DISPLAY_TIMEOUT_MS,
 ) {
   const startedAt = performance.now()
   const renditionWithEvents = rendition as RenditionWithEvents
@@ -256,7 +275,7 @@ async function waitForInitialDisplay(
     if (hasSavedLocation) {
       displayTimeoutRef.current = window.setTimeout(() => {
         finish('timeout', new Error('Restore timed out. Please retry or start from the beginning.'))
-      }, RESTORE_DISPLAY_TIMEOUT_MS)
+      }, timeoutMs)
     }
 
     void rendition
@@ -683,6 +702,12 @@ export function ReaderPage() {
     void loadBookData()
 
     return () => {
+      persistCurrentReadingProgress(
+        bookId,
+        currentLocationCfiRef,
+        progressRef,
+        initialDisplaySettledRef,
+      )
       resetInitializationGuards(
         locationSaveTimerRef,
         displayTimeoutRef,
@@ -849,6 +874,37 @@ export function ReaderPage() {
         )
         await logReaderCheckpoint('initialize:waitForInitialDisplay:after', { bookId })
         if (cancelled) return
+
+        if (book.locationCfi) {
+          setLoadingMessage('恢复上次阅读位置...')
+          await logReaderCheckpoint('initialize:restore saved location:before', {
+            bookId,
+            savedLocationCfi: book.locationCfi,
+          })
+          try {
+            await waitForInitialDisplay(
+              rendition,
+              book.locationCfi,
+              true,
+              displayAttemptIdRef,
+              displayTimeoutRef,
+              'deferred_saved_cfi',
+              DEFERRED_RESTORE_TIMEOUT_MS,
+            )
+            await logReaderCheckpoint('initialize:restore saved location:after', {
+              bookId,
+              savedLocationCfi: book.locationCfi,
+            })
+          } catch (restoreError) {
+            logReaderWarn('initialize:restore saved location failed', {
+              bookId,
+              savedLocationCfi: book.locationCfi,
+              message: restoreError instanceof Error ? restoreError.message : String(restoreError),
+            })
+          }
+          if (cancelled) return
+        }
+
         setLoadingProgressValue(100)
         updateInitialDisplaySettled(
           true,
@@ -1179,6 +1235,12 @@ export function ReaderPage() {
         type="button"
         onClick={(event) => {
           event.stopPropagation()
+          persistCurrentReadingProgress(
+            bookId,
+            currentLocationCfiRef,
+            progressRef,
+            initialDisplaySettledRef,
+          )
           navigate('/')
         }}
         className={`absolute left-6 top-6 z-50 rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-blue-900/20 transition-all hover:bg-blue-500 ${
