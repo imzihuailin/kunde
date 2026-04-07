@@ -166,10 +166,6 @@ export async function saveReadingProgress(
   emitBooksChange()
 }
 
-export async function getBookChapters(bookId: string): Promise<ChapterItem[]> {
-  return (await getBook(bookId))?.chapters ?? []
-}
-
 export async function saveImportedBook(file: File): Promise<SaveImportedBookResult> {
   const db = await dbPromise
   const fileBlob = file.slice(0, file.size, file.type || 'application/epub+zip')

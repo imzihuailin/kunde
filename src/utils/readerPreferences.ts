@@ -11,7 +11,6 @@ export interface ReaderPreferences {
   fontId: string
   fontSize: number
   lineHeight: number
-  pagePadding: number
   colorId: string
   backgroundVariantId: string
 }
@@ -20,7 +19,6 @@ const DEFAULTS: ReaderPreferences = {
   fontId: 'yahei-arial',
   fontSize: 18,
   lineHeight: 1.6,
-  pagePadding: 15,
   colorId: 'white',
   backgroundVariantId: 'pure',
 }
@@ -40,7 +38,6 @@ export function getReaderPreferences(): ReaderPreferences {
           : DEFAULTS.fontId,
       fontSize: typeof raw.fontSize === 'number' ? Math.max(14, Math.min(30, raw.fontSize)) : DEFAULTS.fontSize,
       lineHeight: typeof raw.lineHeight === 'number' ? Math.max(1.2, Math.min(2.2, raw.lineHeight)) : DEFAULTS.lineHeight,
-      pagePadding: typeof raw.pagePadding === 'number' ? Math.max(0, Math.min(30, raw.pagePadding)) : DEFAULTS.pagePadding,
       colorId: isReaderColorId(raw.colorId) ? raw.colorId : legacy.colorId,
       backgroundVariantId: isReaderBackgroundVariantId(raw.backgroundVariantId) ? raw.backgroundVariantId : legacy.backgroundVariantId,
     }
