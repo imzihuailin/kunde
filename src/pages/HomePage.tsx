@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { BookCard } from '../components/BookCard'
 import { ConfirmDialog } from '../components/ConfirmDialog'
@@ -26,21 +26,19 @@ export function HomePage() {
     })
   }, [])
 
-  const content = useMemo(() => books, [books])
-
   return (
     <div className="min-h-screen bg-transparent text-slate-900">
       <ShelfHeader />
 
       <main className="mx-auto max-w-7xl px-6 py-8">
-        {content.length === 0 ? (
+        {books.length === 0 ? (
           <EmptyShelf
             title="你的书架还空着"
             description=""
           />
         ) : (
           <section className="grid grid-cols-2 gap-x-7 gap-y-10 xl:grid-cols-4">
-            {content.map((book) => (
+            {books.map((book) => (
               <BookCard
                 key={book.id}
                 title={book.title}
