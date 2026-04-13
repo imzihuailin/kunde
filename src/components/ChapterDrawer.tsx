@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChapterItem } from '../utils/bookStorage'
 
 function normalizeHref(href?: string) {
@@ -7,6 +7,11 @@ function normalizeHref(href?: string) {
 
 function getBaseHref(href?: string) {
   return normalizeHref(href).split('#')[0]
+}
+
+interface ChapterTreeNode extends ChapterItem {
+  parentId: string | null
+  children: ChapterTreeNode[]
 }
 
 interface ChapterDrawerProps {
@@ -20,6 +25,49 @@ interface ChapterDrawerProps {
   onSelect: (href: string) => void
 }
 
+function buildChapterTree(chapters: ChapterItem[]) {
+  const roots: ChapterTreeNode[] = []
+  const stack: ChapterTreeNode[] = []
+  const nodesById = new Map<string, ChapterTreeNode>()
+
+  chapters.forEach((chapter) => {
+    while (stack.length > chapter.level) {
+      stack.pop()
+    }
+
+    const parent = stack.at(-1) ?? null
+    const node: ChapterTreeNode = {
+      ...chapter,
+      parentId: parent?.id ?? null,
+      children: [],
+    }
+
+    nodesById.set(node.id, node)
+
+    if (parent) {
+      parent.children.push(node)
+    } else {
+      roots.push(node)
+    }
+
+    stack.push(node)
+  })
+
+  return { roots, nodesById }
+}
+
+function collectAncestorIds(node: ChapterTreeNode | null, nodesById: Map<string, ChapterTreeNode>) {
+  const ids = new Set<string>()
+  let current = node
+
+  while (current) {
+    ids.add(current.id)
+    current = current.parentId ? (nodesById.get(current.parentId) ?? null) : null
+  }
+
+  return ids
+}
+
 export function ChapterDrawer({
   open,
   chapters,
@@ -31,16 +79,34 @@ export function ChapterDrawer({
   onSelect,
 }: ChapterDrawerProps) {
   const activeItemRef = useRef<HTMLButtonElement | null>(null)
-  const activeChapterHref = useMemo(() => {
+  const { roots, nodesById } = useMemo(() => buildChapterTree(chapters), [chapters])
+
+  const activeNode = useMemo(() => {
     const normalizedCurrentHref = normalizeHref(currentHref)
-    if (!normalizedCurrentHref) return ''
+    if (!normalizedCurrentHref) return null
 
     const exactMatch = chapters.find((chapter) => normalizeHref(chapter.href) === normalizedCurrentHref)
-    if (exactMatch) return normalizeHref(exactMatch.href)
+    if (exactMatch) return nodesById.get(exactMatch.id) ?? null
 
     const currentBaseHref = getBaseHref(normalizedCurrentHref)
-    return normalizeHref(chapters.find((chapter) => getBaseHref(chapter.href) === currentBaseHref)?.href)
-  }, [chapters, currentHref])
+    const baseMatch = chapters.find((chapter) => getBaseHref(chapter.href) === currentBaseHref)
+    return baseMatch ? (nodesById.get(baseMatch.id) ?? null) : null
+  }, [chapters, currentHref, nodesById])
+
+  const defaultExpandedIds = useMemo(
+    () => collectAncestorIds(activeNode, nodesById),
+    [activeNode, nodesById],
+  )
+  const defaultExpandedKey = useMemo(
+    () => Array.from(defaultExpandedIds).sort().join('|'),
+    [defaultExpandedIds],
+  )
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(defaultExpandedIds)
+
+  useEffect(() => {
+    if (!open) return
+    setExpandedIds(new Set(defaultExpandedIds))
+  }, [defaultExpandedKey, defaultExpandedIds, open])
 
   useEffect(() => {
     if (!open || !activeItemRef.current) return
@@ -51,7 +117,55 @@ export function ChapterDrawer({
         behavior: 'instant',
       })
     }, 0)
-  }, [open, activeChapterHref])
+  }, [open, defaultExpandedKey])
+
+  const toggleExpanded = (nodeId: string) => {
+    setExpandedIds((current) => {
+      const next = new Set(current)
+      if (next.has(nodeId)) {
+        next.delete(nodeId)
+      } else {
+        next.add(nodeId)
+      }
+      return next
+    })
+  }
+
+  const renderNode = (node: ChapterTreeNode) => {
+    const hasChildren = node.children.length > 0
+    const isExpanded = expandedIds.has(node.id)
+    const isActive = activeNode?.id === node.id
+
+    return (
+      <li key={node.id}>
+        <div className="flex items-center gap-2" style={{ paddingLeft: `${16 + node.level * 18}px` }}>
+          {hasChildren ? (
+            <button
+              type="button"
+              aria-label={isExpanded ? '收起章节' : '展开章节'}
+              onClick={() => toggleExpanded(node.id)}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm opacity-70 transition hover:bg-black/10 hover:opacity-100"
+            >
+              <span className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▸</span>
+            </button>
+          ) : (
+            <span className="h-10 w-10 shrink-0" />
+          )}
+          <button
+            ref={isActive ? activeItemRef : null}
+            type="button"
+            onClick={() => onSelect(node.href)}
+            className={`flex-1 rounded-2xl px-4 py-3 text-left text-sm transition ${
+              isActive ? 'bg-blue-500/15 font-semibold text-blue-500' : 'hover:bg-white/10'
+            }`}
+          >
+            {node.label}
+          </button>
+        </div>
+        {hasChildren && isExpanded ? <ul className="mt-1 space-y-1">{node.children.map(renderNode)}</ul> : null}
+      </li>
+    )
+  }
 
   return (
     <div className={`fixed inset-0 z-[70] transition ${open ? 'pointer-events-auto' : 'pointer-events-none'}`}>
@@ -82,27 +196,7 @@ export function ChapterDrawer({
                 本书暂无目录
               </div>
             ) : (
-              <ul className="space-y-1">
-                {chapters.map((chapter) => {
-                  const normalizedChapterHref = normalizeHref(chapter.href)
-                  const active = activeChapterHref !== '' && activeChapterHref === normalizedChapterHref
-                  return (
-                    <li key={chapter.id}>
-                      <button
-                        ref={active ? activeItemRef : null}
-                        type="button"
-                        onClick={() => onSelect(chapter.href)}
-                        className={`w-full rounded-2xl px-4 py-3 text-left text-sm transition ${
-                          active ? 'bg-blue-500/15 font-semibold text-blue-500' : 'hover:bg-white/10'
-                        }`}
-                        style={{ paddingLeft: `${16 + chapter.level * 18}px` }}
-                      >
-                        {chapter.label}
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
+              <ul className="space-y-1">{roots.map(renderNode)}</ul>
             )}
           </div>
         </div>

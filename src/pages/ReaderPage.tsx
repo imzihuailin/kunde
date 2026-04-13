@@ -1333,7 +1333,7 @@ export function ReaderPage() {
             className="flex items-center gap-3 border-b px-5 py-4"
             style={{ borderColor: background.borderColor }}
           >
-            <span className="text-xl leading-none">🔍</span>
+            <span className="text-xl leading-none">🔎</span>
             <input
               type="text"
               value={searchQuery}
@@ -1367,7 +1367,7 @@ export function ReaderPage() {
 
           <div className="max-h-[22rem] overflow-y-auto px-3 py-3">
             {!normalizeSearchText(searchQuery) && (
-              <div className="px-3 py-8 text-center text-sm opacity-65">输入关键词后即可检索整本书</div>
+              <div className="px-3 py-8 text-center text-sm opacity-65">输入关键词后即可搜索整本书</div>
             )}
 
             {normalizeSearchText(searchQuery) && searching && (
