@@ -396,8 +396,13 @@ function applyReaderStylesToDocument(
     lineHeight: number
     textColor: string
     linkColor: string
+    isDarkScheme: boolean
   },
 ) {
+  const codeTextColor = options.isDarkScheme ? '#f8fafc' : '#1e293b'
+  const inlineCodeBackgroundColor = options.isDarkScheme ? 'rgba(148,163,184,0.18)' : 'rgba(148,163,184,0.18)'
+  const codeBlockBackgroundColor = options.isDarkScheme ? 'rgba(15,23,42,0.88)' : 'rgba(241,245,249,0.96)'
+  const codeBorderColor = options.isDarkScheme ? 'rgba(148,163,184,0.28)' : 'rgba(148,163,184,0.36)'
   const styleId = 'kunde-reader-overrides'
   let styleEl = doc.getElementById(styleId) as HTMLStyleElement | null
 
@@ -413,7 +418,12 @@ function applyReaderStylesToDocument(
       box-sizing: border-box !important;
     }
 
-    body, body * {
+    html, body {
+      background: transparent !important;
+    }
+
+    body,
+    body *:not(pre):not(code):not(kbd):not(samp) {
       color: ${options.textColor} !important;
       line-height: ${options.lineHeight} !important;
     }
@@ -424,7 +434,7 @@ function applyReaderStylesToDocument(
       background: transparent !important;
     }
 
-    p, div, li, blockquote,
+    p, div, li, blockquote, span,
     h1, h2, h3, h4, h5, h6 {
       line-height: ${options.lineHeight} !important;
     }
@@ -436,7 +446,92 @@ function applyReaderStylesToDocument(
     a {
       color: ${options.linkColor} !important;
     }
+
+    pre, code, kbd, samp {
+      color: ${codeTextColor} !important;
+      border-color: ${codeBorderColor} !important;
+    }
+
+    code, kbd, samp {
+      background: ${inlineCodeBackgroundColor} !important;
+    }
+
+    pre {
+      background: ${codeBlockBackgroundColor} !important;
+      border: 1px solid ${codeBorderColor} !important;
+      border-radius: 10px !important;
+      padding: 0.9em 1em !important;
+      overflow-x: auto !important;
+    }
+
+    pre code {
+      background: transparent !important;
+      border-color: transparent !important;
+      padding: 0 !important;
+    }
   `
+}
+
+function applyReaderThemeToRendition(
+  rendition: EpubRendition,
+  options: {
+    fontFamily: string
+    fontSize: number
+    lineHeight: number
+    textColor: string
+    linkColor: string
+    isDarkScheme: boolean
+  },
+) {
+  const codeTextColor = options.isDarkScheme ? '#f8fafc' : '#1e293b'
+  const inlineCodeBackgroundColor = options.isDarkScheme ? 'rgba(148,163,184,0.18)' : 'rgba(148,163,184,0.18)'
+  const codeBlockBackgroundColor = options.isDarkScheme ? 'rgba(15,23,42,0.88)' : 'rgba(241,245,249,0.96)'
+  const codeBorderColor = options.isDarkScheme ? 'rgba(148,163,184,0.28)' : 'rgba(148,163,184,0.36)'
+
+  const applyOverrides = (doc: Document) => {
+    applyReaderStylesToDocument(doc, options)
+  }
+
+  rendition.themes.default({
+    html: `font-family: ${options.fontFamily} !important; background: transparent !important;`,
+    body: `color: ${options.textColor} !important; line-height: ${options.lineHeight} !important; background: transparent !important;`,
+    'body *:not(pre):not(code):not(kbd):not(samp)': `font-family: ${options.fontFamily} !important; color: ${options.textColor} !important; line-height: ${options.lineHeight} !important;`,
+    p: `line-height: ${options.lineHeight} !important; margin: 0 0 1em;`,
+    'div, li, blockquote, span': `line-height: ${options.lineHeight} !important;`,
+    'h1, h2, h3, h4, h5, h6': `color: ${options.textColor} !important; line-height: ${options.lineHeight} !important;`,
+    a: `color: ${options.linkColor} !important;`,
+    'pre, code, kbd, samp': `color: ${codeTextColor} !important; border-color: ${codeBorderColor} !important;`,
+    'code, kbd, samp': `background: ${inlineCodeBackgroundColor} !important;`,
+    pre: `background: ${codeBlockBackgroundColor} !important; border: 1px solid ${codeBorderColor} !important; border-radius: 10px !important; padding: 0.9em 1em !important; overflow-x: auto !important;`,
+    'pre code': 'background: transparent !important; border-color: transparent !important; padding: 0 !important;',
+  })
+  rendition.themes.font(options.fontFamily)
+  rendition.themes.fontSize(`${options.fontSize}px`)
+  rendition.themes.override('font-family', options.fontFamily, true)
+  rendition.themes.override('color', options.textColor, true)
+  rendition.themes.override('background', 'transparent', true)
+  rendition.themes.override('line-height', String(options.lineHeight), true)
+
+  const renditionWithInternals = rendition as EpubRendition & {
+    getContents?: () => Array<{ document?: Document }>
+    hooks?: {
+      content?: {
+        register?: (callback: (contents: { document?: Document }) => void) => void
+      }
+    }
+  }
+
+  renditionWithInternals.getContents?.().forEach((contents) => {
+    if (contents.document) {
+      applyOverrides(contents.document)
+    }
+  })
+
+  renditionWithInternals.hooks?.content?.register?.((contents) => {
+    if (contents.document) {
+      applyOverrides(contents.document)
+    }
+  })
 }
 
 interface ReaderSearchResult {
@@ -555,6 +650,7 @@ export function ReaderPage() {
     initialPrefs.backgroundVariantId as ReaderBackgroundVariantId,
   )
 
+  const font = FONT_OPTIONS.find((item) => item.id === fontId) ?? FONT_OPTIONS[0]
   const background = getReaderBackground(colorId, backgroundVariantId)
 
   const setProgressValue = (value: number) => {
@@ -795,6 +891,14 @@ export function ReaderPage() {
         await logReaderCheckpoint('initialize:renderTo:after', { bookId })
 
         renditionRef.current = rendition
+        applyReaderThemeToRendition(rendition, {
+          fontFamily: font.fontFamily,
+          fontSize,
+          lineHeight,
+          textColor: background.textColor,
+          linkColor: background.linkColor,
+          isDarkScheme: background.isDarkScheme,
+        })
 
         const toggleToolbar = () => {
           setToolbarVisible((visible) => !visible)
@@ -990,56 +1094,17 @@ export function ReaderPage() {
 
   useEffect(() => {
     const rendition = renditionRef.current
-    const font = FONT_OPTIONS.find((item) => item.id === fontId) ?? FONT_OPTIONS[0]
     if (!rendition) return
 
-    const applyOverrides = (doc: Document) => {
-      applyReaderStylesToDocument(doc, {
-        fontFamily: font.fontFamily,
-        lineHeight,
-        textColor: background.textColor,
-        linkColor: background.linkColor,
-      })
-    }
-
-    rendition.themes.default({
-      html: `font-family: ${font.fontFamily} !important;`,
-      body: `color: ${background.textColor} !important; line-height: ${lineHeight} !important; background: transparent !important;`,
-      'body, body *': `font-family: ${font.fontFamily} !important; color: ${background.textColor} !important;`,
-      'body *': `line-height: ${lineHeight} !important; color: ${background.textColor} !important;`,
-      p: `line-height: ${lineHeight} !important; margin: 0 0 1em;`,
-      'div, li, blockquote': `line-height: ${lineHeight} !important;`,
-      'h1, h2, h3, h4, h5, h6': `color: ${background.textColor} !important; line-height: ${lineHeight} !important;`,
-      a: `color: ${background.linkColor} !important;`,
+    applyReaderThemeToRendition(rendition, {
+      fontFamily: font.fontFamily,
+      fontSize,
+      lineHeight,
+      textColor: background.textColor,
+      linkColor: background.linkColor,
+      isDarkScheme: background.isDarkScheme,
     })
-    rendition.themes.font(font.fontFamily)
-    rendition.themes.fontSize(`${fontSize}px`)
-    rendition.themes.override('font-family', font.fontFamily, true)
-    rendition.themes.override('color', background.textColor, true)
-    rendition.themes.override('background', 'transparent', true)
-    rendition.themes.override('line-height', String(lineHeight), true)
-
-    const renditionWithInternals = rendition as EpubRendition & {
-      getContents?: () => Array<{ document?: Document }>
-      hooks?: {
-        content?: {
-          register?: (callback: (contents: { document?: Document }) => void) => void
-        }
-      }
-    }
-
-    renditionWithInternals.getContents?.().forEach((contents) => {
-      if (contents.document) {
-        applyOverrides(contents.document)
-      }
-    })
-
-    renditionWithInternals.hooks?.content?.register?.((contents) => {
-      if (contents.document) {
-        applyOverrides(contents.document)
-      }
-    })
-  }, [fontId, fontSize, lineHeight, background.textColor, background.linkColor])
+  }, [fontId, fontSize, lineHeight, background.textColor, background.linkColor, background.isDarkScheme])
 
   useEffect(() => {
     applySearchHighlight(activeSearchHighlightCfiRef.current)
