@@ -83,6 +83,12 @@ npm run preview
   # 启动恢复要尽量保守。初始化阶段不要持久化 `locationCfi`，只有在阅读器稳定后、且由用户明确触发翻页/跳转时才允许覆盖保存位置。
 - When debugging reader startup, surface the latest internal checkpoints in the loading UI in development so issues can be diagnosed without opening DevTools.
   # 调试阅读器启动问题时，开发环境应把最新内部检查点直接显示在加载 UI 上，这样即使不打开 DevTools 也能定位问题。
+
+## Refactoring Rules
+
+- Before any refactor that is likely to touch roughly 200 lines of code or more, first self-check for redundancy and identify dead code, duplicate logic, and obsolete assets that can be removed instead of reshaped.
+- Do not use hacking patches. Avoid narrow stopgap fixes that only mask structural problems without clarifying ownership, removing redundancy, or leaving the codebase in a cleaner state.
+
 ## Encoding Rules
 
 - Treat all repo source files as UTF-8 text.
