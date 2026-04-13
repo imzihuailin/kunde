@@ -1,4 +1,13 @@
+import { useEffect, useMemo, useRef } from 'react'
 import type { ChapterItem } from '../utils/bookStorage'
+
+function normalizeHref(href?: string) {
+  return href?.trim() ?? ''
+}
+
+function getBaseHref(href?: string) {
+  return normalizeHref(href).split('#')[0]
+}
 
 interface ChapterDrawerProps {
   open: boolean
@@ -21,6 +30,29 @@ export function ChapterDrawer({
   onClose,
   onSelect,
 }: ChapterDrawerProps) {
+  const activeItemRef = useRef<HTMLButtonElement | null>(null)
+  const activeChapterHref = useMemo(() => {
+    const normalizedCurrentHref = normalizeHref(currentHref)
+    if (!normalizedCurrentHref) return ''
+
+    const exactMatch = chapters.find((chapter) => normalizeHref(chapter.href) === normalizedCurrentHref)
+    if (exactMatch) return normalizeHref(exactMatch.href)
+
+    const currentBaseHref = getBaseHref(normalizedCurrentHref)
+    return normalizeHref(chapters.find((chapter) => getBaseHref(chapter.href) === currentBaseHref)?.href)
+  }, [chapters, currentHref])
+
+  useEffect(() => {
+    if (!open || !activeItemRef.current) return
+
+    window.setTimeout(() => {
+      activeItemRef.current?.scrollIntoView({
+        block: 'center',
+        behavior: 'instant',
+      })
+    }, 0)
+  }, [open, activeChapterHref])
+
   return (
     <div className={`fixed inset-0 z-[70] transition ${open ? 'pointer-events-auto' : 'pointer-events-none'}`}>
       <div
@@ -52,10 +84,12 @@ export function ChapterDrawer({
             ) : (
               <ul className="space-y-1">
                 {chapters.map((chapter) => {
-                  const active = currentHref && currentHref.split('#')[0] === chapter.href.split('#')[0]
+                  const normalizedChapterHref = normalizeHref(chapter.href)
+                  const active = activeChapterHref !== '' && activeChapterHref === normalizedChapterHref
                   return (
                     <li key={chapter.id}>
                       <button
+                        ref={active ? activeItemRef : null}
                         type="button"
                         onClick={() => onSelect(chapter.href)}
                         className={`w-full rounded-2xl px-4 py-3 text-left text-sm transition ${
