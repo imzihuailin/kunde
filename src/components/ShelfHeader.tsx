@@ -11,7 +11,7 @@ export function ShelfHeader() {
         <div className="flex items-center gap-2">
           <Link
             to={shelfTab.to}
-            className="rounded-full bg-transparent px-4 py-2 text-xl font-semibold leading-none text-slate-900 transition hover:bg-transparent"
+            className="flex h-10 w-[104px] items-center rounded-full bg-transparent text-[40px] font-semibold leading-none text-slate-900 transition hover:bg-transparent"
             aria-current={location.pathname === shelfTab.to ? 'page' : undefined}
           >
             {shelfTab.label}
@@ -25,7 +25,7 @@ export function ShelfHeader() {
         </div>
         <Link
           to={favoriteTab.to}
-          className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+          className="flex h-10 items-center rounded-full bg-slate-900 px-4 text-sm font-semibold leading-none text-white transition hover:bg-slate-800"
           aria-current={location.pathname === favoriteTab.to ? 'page' : undefined}
         >
           {favoriteTab.label}
