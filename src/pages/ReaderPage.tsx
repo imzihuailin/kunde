@@ -45,19 +45,8 @@ interface ReaderDebugEntry {
   createdAt: number
 }
 
-function emitReaderDebugEntry(level: 'info' | 'warn', message: string, payload?: Record<string, unknown>) {
-  if (!import.meta.env.DEV || typeof window === 'undefined') return
-
-  window.dispatchEvent(
-    new CustomEvent<ReaderDebugEntry>(READER_DEBUG_EVENT, {
-      detail: {
-        level,
-        message,
-        payload,
-        createdAt: Date.now(),
-      },
-    }),
-  )
+function emitReaderDebugEntry(_level: 'info' | 'warn', _message: string, _payload?: Record<string, unknown>) {
+  // silenced
 }
 
 function clearWindowTimer(timerRef: MutableRefObject<number | null>) {
@@ -84,48 +73,20 @@ function persistCurrentReadingProgress(
   })
 }
 
-function logReaderPhaseTiming(label: string, startedAt: number) {
-  if (!import.meta.env.DEV) return
-
-  const duration = Math.round(performance.now() - startedAt)
-  console.info(`[ReaderPage] ${label}: ${duration}ms`)
-  emitReaderDebugEntry('info', `${label}: ${duration}ms`)
+function logReaderPhaseTiming(_label: string, _startedAt: number) {
+  // silenced
 }
 
-function logReaderDebug(label: string, payload?: Record<string, unknown>) {
-  if (!import.meta.env.DEV) return
-
-  if (payload) {
-    console.info(`[ReaderPage] ${label}`, payload)
-    emitReaderDebugEntry('info', label, payload)
-    return
-  }
-
-  console.info(`[ReaderPage] ${label}`)
-  emitReaderDebugEntry('info', label)
+function logReaderDebug(_label: string, _payload?: Record<string, unknown>) {
+  // silenced
 }
 
-function logReaderWarn(label: string, payload?: Record<string, unknown>) {
-  if (!import.meta.env.DEV) return
-
-  if (payload) {
-    console.warn(`[ReaderPage] ${label}`, payload)
-    emitReaderDebugEntry('warn', label, payload)
-    return
-  }
-
-  console.warn(`[ReaderPage] ${label}`)
-  emitReaderDebugEntry('warn', label)
+function logReaderWarn(_label: string, _payload?: Record<string, unknown>) {
+  // silenced
 }
 
-async function logReaderCheckpoint(label: string, payload?: Record<string, unknown>) {
-  logReaderDebug(label, payload)
-
-  if (!import.meta.env.DEV) return
-
-  await new Promise<void>((resolve) => {
-    window.setTimeout(resolve, 0)
-  })
+async function logReaderCheckpoint(_label: string, _payload?: Record<string, unknown>) {
+  // silenced
 }
 
 function normalizeReaderError(error: unknown, fallbackMessage: string) {

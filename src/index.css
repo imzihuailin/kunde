@@ -1,32 +1,260 @@
+/* ==========================================
+   KAMI PAPER STYLE SYSTEM
+   ========================================== */
+:root {
+  /* Paper colors */
+  --paper: #f5f4ed;
+  --paper-deep: #ece7da;
+  --surface: #fbfaf4;
+  --surface-2: #eee8d9;
+
+  /* Ink colors */
+  --ink: #24221d;
+  --ink-blue: #1B365D;
+  --olive: #5f5b4f;
+  --line: #ddd6c6;
+  --tag: #E4ECF5;
+
+  /* Typography */
+  --serif: TsangerJinKai02, "Source Han Serif SC", "Songti SC", "Noto Serif CJK SC", Georgia, serif;
+  --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "JetBrains Mono", "IBM Plex Mono", Menlo, monospace;
+
+  /* Shadows */
+  --warm-shadow: 0 4px 24px rgba(36, 34, 29, 0.05);
+  --paper-shadow: 0 8px 32px rgba(36, 34, 29, 0.06);
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-pill: 999px;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color: #0f172a;
-  background:
-    radial-gradient(circle at top left, rgba(148, 163, 184, 0.12), transparent 28%),
-    linear-gradient(180deg, #f7f8fb 0%, #eef2f7 100%);
-  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
-}
-
+/* Base styles */
 html,
 body,
 #root {
   min-height: 100%;
+  color: var(--ink);
+  background:
+    linear-gradient(90deg, rgba(36, 34, 29, 0.028) 1px, transparent 1px) 0 0 / 44px 44px,
+    linear-gradient(180deg, var(--paper) 0%, var(--paper-deep) 100%);
+  font-family: var(--serif);
+  letter-spacing: 0.35px;
+  font-variant-numeric: tabular-nums;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
+  font-style: normal;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 18% 0%, rgba(27, 54, 93, 0.055), transparent 26%);
+  z-index: 0;
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+/* Typography overrides */
+* {
+  font-style: normal !important;
 }
 
 button,
 input,
 textarea {
-  font: inherit;
+  font-family: var(--serif) !important;
+  font-weight: 500 !important;
 }
 
+/* ==========================================
+   TAILWIND COLOR OVERRIDES
+   ========================================== */
+@layer utilities {
+  /* Slate text colors */
+  .text-slate-900 { color: var(--ink) !important; }
+  .text-slate-800 { color: var(--ink) !important; }
+  .text-slate-700 { color: var(--olive) !important; }
+  .text-slate-600 { color: var(--olive) !important; }
+  .text-slate-500 { color: var(--olive) !important; }
+  .text-slate-400 { color: var(--line) !important; }
+
+  /* Blue text to ink-blue */
+  .text-blue-600 { color: var(--ink-blue) !important; }
+  .text-blue-700 { color: var(--ink-blue) !important; }
+  .text-blue-500 { color: var(--ink-blue) !important; }
+
+  /* Background overrides */
+  .bg-white { background: var(--surface) !important; }
+  .bg-transparent { background: transparent !important; }
+  .bg-slate-900 { background: var(--ink) !important; }
+  .bg-slate-800 { background: var(--ink) !important; }
+  .bg-slate-50 { background: var(--surface-2) !important; }
+  .bg-blue-600 { background: var(--ink-blue) !important; }
+  .bg-blue-700 { background: var(--ink-blue) !important; }
+  .bg-blue-50 { background: var(--tag) !important; }
+
+  /* Border overrides */
+  .border-slate-200,
+  .border-slate-300,
+  .border-slate-400 {
+    border-color: var(--line) !important;
+  }
+
+  /* Shadow overrides */
+  .shadow-lg { box-shadow: var(--warm-shadow) !important; }
+
+  /* Blur overrides */
+  .backdrop-blur-xl,
+  .backdrop-blur {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  /* Gradient overrides */
+  .bg-gradient-to-b,
+  .from-slate-50,
+  .to-white {
+    background: linear-gradient(180deg, #fffdf7 0%, var(--surface) 100%) !important;
+  }
+
+}
+
+/* ==========================================
+   COMPONENT OVERRIDES
+   ========================================== */
+
+/* Header */
+header {
+  background: color-mix(in srgb, var(--paper) 92%, white) !important;
+  border-bottom: 1px solid var(--line) !important;
+}
+
+/* Button styles */
+.rounded-full.bg-slate-900,
+.rounded-full.bg-slate-800 {
+  border: 1px solid var(--line) !important;
+}
+
+.rounded-full.bg-blue-600 {
+  border: 1px solid var(--ink-blue) !important;
+}
+
+/* Book card */
+article button div.relative {
+  border: 1px solid var(--line) !important;
+  border-radius: var(--radius-md) !important;
+  background: linear-gradient(180deg, #fffdf7 0%, var(--surface) 100%) !important;
+  box-shadow: var(--warm-shadow) !important;
+}
+
+article button:hover div.relative {
+  transform: translateY(-1px) !important;
+  box-shadow: var(--paper-shadow) !important;
+}
+
+/* Star button filled */
+button.rounded-full.border-amber-300 {
+  border-color: var(--line) !important;
+  background: var(--tag) !important;
+  color: var(--ink-blue) !important;
+}
+
+/* Star and trash buttons */
+button.rounded-full[class*="border-white"],
+button.rounded-full.border-white {
+  border-color: var(--line) !important;
+  background: var(--surface) !important;
+  color: var(--olive) !important;
+}
+
+button.rounded-full[class*="border-white"]:hover,
+button.rounded-full.border-white:hover {
+  background: var(--surface-2) !important;
+}
+
+/* Add book page section */
+section.rounded-\[2\.5rem\] {
+  border: 1px solid var(--line) !important;
+  border-radius: var(--radius-md) !important;
+  background: linear-gradient(180deg, #fffdf7 0%, var(--surface) 100%) !important;
+  box-shadow: var(--warm-shadow) !important;
+}
+
+/* Drop zone */
+button.rounded-\[2\.25rem\].border-2.border-dashed {
+  border-radius: var(--radius-md) !important;
+  background: var(--surface-2) !important;
+}
+
+button.rounded-\[2\.25rem\].border-blue-500 {
+  border-color: var(--ink-blue) !important;
+  background: var(--tag) !important;
+}
+
+/* Dialog */
+.fixed[class*="bg-slate-900"] {
+  background: var(--ink) !important;
+}
+
+.rounded-\[1\.5rem\][class*="bg-white"] {
+  background: var(--surface) !important;
+  border: 1px solid var(--line) !important;
+}
+
+/* Remove backdrop from dialogs with slash classes */
+[class*="bg-slate-900"],
+[class*="bg-white"] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* ==========================================
+   BRAND ELEMENTS
+   ========================================== */
+
+/* Footer kicker - the big "Kunde" at bottom */
+.brand-kicker {
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: clamp(56px, 12vw, 132px);
+  font-weight: 500;
+  line-height: 0.9;
+  letter-spacing: -0.02em;
+}
+
+/* Brand badge for header */
+.brand-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border: 1px solid var(--ink-blue);
+  background: var(--tag);
+  color: var(--ink-blue);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  border-radius: var(--radius-pill);
+}
+
+/* Reader content */
 .reader-content {
   width: 100%;
   min-height: 100%;
@@ -34,4 +262,14 @@ textarea {
 
 .reader-content * {
   box-sizing: border-box;
+}
+
+/* Don't override reader iframe background - use original background images */
+.reader-content iframe {
+  background: transparent !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  /* Mobile styles here */
 }
