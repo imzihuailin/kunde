@@ -39,7 +39,7 @@ export const READER_COLOR_OPTIONS: ReaderColorOption[] = [
   { id: 'white', label: '白色', previewImage: createAssetPath('white-pure.jpg'), previewBorder: '#d7dfeb', overlayTint: 'rgba(255,255,255,0.14)', previewTextColor: '#1f2937' },
   { id: 'yellow', label: '米黄', previewImage: createAssetPath('yellow-pure.jpg'), previewBorder: '#efc678', overlayTint: 'rgba(255,255,255,0.14)', previewTextColor: '#5f4523' },
   { id: 'green', label: '淡绿', previewImage: createAssetPath('green-pure.jpg'), previewBorder: '#4aa95b', overlayTint: 'rgba(255,255,255,0.14)', previewTextColor: '#1c4d2c' },
-  { id: 'dark', label: '夜间', previewImage: createAssetPath('dark-pure.jpg'), previewBorder: '#4d5b7a', overlayTint: 'rgba(4,8,16,0.18)', previewTextColor: '#e5edf7' },
+  { id: 'dark', label: '夜间', previewImage: createAssetPath('dark-pure.jpg'), previewBorder: '#4d5b7a', overlayTint: 'rgba(4,8,16,0.18)', previewTextColor: '#b8bcc8' },
 ]
 
 export const READER_BACKGROUND_VARIANTS: ReaderBackgroundVariantOption[] = [
@@ -65,9 +65,9 @@ const BACKGROUND_MAP: Record<ReaderColorId, Record<ReaderBackgroundVariantId, Re
     scene: { id: 'green-scene', colorId: 'green', backgroundVariantId: 'scene', image: createAssetPath('green-scene.jpg'), textColor: '#18442f', linkColor: '#15803d', surfaceOverlay: '#f5fff5', borderColor: 'rgba(32,104,52,0.2)', isDarkScheme: false, fallbackColor: '#d7f5d8', pageScrim: 'rgba(250,255,250,0.08)', previewPosition: 'center bottom', pagePosition: 'center bottom' },
   },
   dark: {
-    pure: { id: 'dark-pure', colorId: 'dark', backgroundVariantId: 'pure', image: createAssetPath('dark-pure.jpg'), textColor: '#e5edf7', linkColor: '#7dd3fc', surfaceOverlay: '#080c14', borderColor: 'rgba(206,227,255,0.18)', isDarkScheme: true, fallbackColor: '#0a0f1c', pageScrim: 'rgba(5,10,18,0.28)', previewPosition: 'center center', pagePosition: 'center top' },
-    moon: { id: 'dark-moon', colorId: 'dark', backgroundVariantId: 'moon', image: createAssetPath('dark-moon.jpg'), textColor: '#eff6ff', linkColor: '#7dd3fc', surfaceOverlay: '#050a12', borderColor: 'rgba(206,227,255,0.18)', isDarkScheme: true, fallbackColor: '#09111f', pageScrim: 'rgba(2,6,12,0.3)', previewPosition: 'center top', pagePosition: 'center top' },
-    scene: { id: 'dark-scene', colorId: 'dark', backgroundVariantId: 'scene', image: createAssetPath('dark-scene.jpg'), textColor: '#eff6ff', linkColor: '#7dd3fc', surfaceOverlay: '#050a12', borderColor: 'rgba(206,227,255,0.18)', isDarkScheme: true, fallbackColor: '#0a1120', pageScrim: 'rgba(3,7,12,0.28)', previewPosition: 'center top', pagePosition: 'center bottom' },
+    pure: { id: 'dark-pure', colorId: 'dark', backgroundVariantId: 'pure', image: createAssetPath('dark-pure.jpg'), textColor: '#b8bcc8', linkColor: '#7dd3fc', surfaceOverlay: '#080c14', borderColor: 'rgba(206,227,255,0.18)', isDarkScheme: true, fallbackColor: '#0a0f1c', pageScrim: 'rgba(5,10,18,0.28)', previewPosition: 'center center', pagePosition: 'center top' },
+    moon: { id: 'dark-moon', colorId: 'dark', backgroundVariantId: 'moon', image: createAssetPath('dark-moon.jpg'), textColor: '#b8bcc8', linkColor: '#7dd3fc', surfaceOverlay: '#050a12', borderColor: 'rgba(206,227,255,0.18)', isDarkScheme: true, fallbackColor: '#09111f', pageScrim: 'rgba(2,6,12,0.3)', previewPosition: 'center top', pagePosition: 'center top' },
+    scene: { id: 'dark-scene', colorId: 'dark', backgroundVariantId: 'scene', image: createAssetPath('dark-scene.jpg'), textColor: '#b8bcc8', linkColor: '#7dd3fc', surfaceOverlay: '#050a12', borderColor: 'rgba(206,227,255,0.18)', isDarkScheme: true, fallbackColor: '#0a1120', pageScrim: 'rgba(3,7,12,0.28)', previewPosition: 'center top', pagePosition: 'center bottom' },
   },
 }
 
