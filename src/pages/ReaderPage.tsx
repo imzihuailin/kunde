@@ -45,10 +45,6 @@ interface ReaderDebugEntry {
   createdAt: number
 }
 
-function emitReaderDebugEntry(_level: 'info' | 'warn', _message: string, _payload?: Record<string, unknown>) {
-  // silenced
-}
-
 function clearWindowTimer(timerRef: MutableRefObject<number | null>) {
   if (timerRef.current !== null) {
     window.clearTimeout(timerRef.current)
