@@ -125,6 +125,13 @@ export function AddBookPage() {
             {error ? <p className="mt-6 text-base text-rose-600">{error}</p> : null}
           </button>
         </section>
+
+        <footer className="mx-auto max-w-7xl pb-12 pt-16 text-slate-900">
+          <div className="text-center">
+            <p className="brand-kicker select-none">Kunde</p>
+            <p className="mt-4 text-sm tracking-[0.22em] text-slate-500">本地阅读，如纸如墨</p>
+          </div>
+        </footer>
       </div>
     </div>
   )
