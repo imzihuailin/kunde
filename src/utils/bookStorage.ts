@@ -4,6 +4,9 @@ import { openDB, type DBSchema } from 'idb'
 const DB_NAME = 'kunde_reader_db'
 const DB_VERSION = 1
 const BOOKS_CHANGE_EVENT = 'bookschange'
+const SAMPLE_BOOK_SEEDED_KEY = 'kunde_sample_book_seeded_v1'
+const SAMPLE_BOOK_PATH = '/sample-books/test-book.epub'
+const SAMPLE_BOOK_TITLE = '测试书籍'
 
 export interface ChapterItem {
   id: string
@@ -32,6 +35,10 @@ export interface BookRecord {
 export interface SaveImportedBookResult {
   book: BookRecord
   isDuplicate: boolean
+}
+
+interface SaveImportedBookOptions {
+  titleOverride?: string
 }
 
 interface BookFileRecord {
@@ -166,7 +173,7 @@ export async function saveReadingProgress(
   emitBooksChange()
 }
 
-export async function saveImportedBook(file: File): Promise<SaveImportedBookResult> {
+export async function saveImportedBook(file: File, options: SaveImportedBookOptions = {}): Promise<SaveImportedBookResult> {
   const db = await dbPromise
   const fileBlob = file.slice(0, file.size, file.type || 'application/epub+zip')
   const fileBuffer = await file.arrayBuffer()
@@ -201,7 +208,7 @@ export async function saveImportedBook(file: File): Promise<SaveImportedBookResu
     const now = Date.now()
     const record: BookRecord = {
       id: duplicate?.id ?? `book_${now}_${Math.random().toString(36).slice(2, 9)}`,
-      title: metadata.title?.trim() || file.name.replace(/\.epub$/i, '') || '未命名书籍',
+      title: options.titleOverride ?? metadata.title?.trim() ?? file.name.replace(/\.epub$/i, '') ?? '未命名书籍',
       author: metadata.creator?.trim() || metadata.author?.trim() || duplicate?.author || '未知作者',
       coverUrl: coverUrl ?? duplicate?.coverUrl ?? null,
       fileName: file.name,
@@ -228,4 +235,28 @@ export async function saveImportedBook(file: File): Promise<SaveImportedBookResu
   } finally {
     epub.destroy()
   }
+}
+
+export async function seedSampleBookIfNeeded(): Promise<void> {
+  if (window.localStorage.getItem(SAMPLE_BOOK_SEEDED_KEY) === 'true') return
+
+  const db = await dbPromise
+  const existingBooks = await db.getAll('books')
+  if (existingBooks.length > 0) {
+    window.localStorage.setItem(SAMPLE_BOOK_SEEDED_KEY, 'true')
+    return
+  }
+
+  const response = await fetch(SAMPLE_BOOK_PATH)
+  if (!response.ok) {
+    throw new Error('示例书籍加载失败。')
+  }
+
+  const blob = await response.blob()
+  const file = new File([blob], 'test-book.epub', {
+    type: blob.type || 'application/epub+zip',
+  })
+
+  await saveImportedBook(file, { titleOverride: SAMPLE_BOOK_TITLE })
+  window.localStorage.setItem(SAMPLE_BOOK_SEEDED_KEY, 'true')
 }

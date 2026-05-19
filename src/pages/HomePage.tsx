@@ -8,6 +8,7 @@ import { formatProgress, getBookAuthorLabel } from '../utils/bookFormatting'
 import {
   deleteBook,
   listBooks,
+  seedSampleBookIfNeeded,
   subscribeBooksChange,
   toggleFavoriteBook,
   type BookRecord,
@@ -19,7 +20,11 @@ export function HomePage() {
   const [deleteTarget, setDeleteTarget] = useState<BookRecord | null>(null)
 
   useEffect(() => {
-    const load = async () => setBooks(await listBooks())
+    const load = async () => {
+      // Temporary forum demo seed. Remove this line and public/sample-books/test-book.epub for the no-sample version.
+      await seedSampleBookIfNeeded()
+      setBooks(await listBooks())
+    }
     void load()
     return subscribeBooksChange(() => {
       void load()
