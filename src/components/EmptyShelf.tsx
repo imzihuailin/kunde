@@ -14,7 +14,7 @@ export function EmptyShelf({
   actionTo = '/add',
 }: EmptyShelfProps) {
   return (
-    <div className="flex min-h-[50vh] flex-col items-center justify-center rounded-[2rem] border border-dashed border-slate-300 bg-white/50 px-8 text-center">
+    <div className="flex min-h-[50vh] flex-col items-start justify-center rounded-[2rem] border border-dashed border-slate-300 bg-white/50 px-[4.5rem] text-left">
       <h2 className="text-2xl font-semibold text-slate-900">{title}</h2>
       <p className="mt-3 max-w-lg text-sm leading-7 text-slate-600">{description}</p>
       <Link
