@@ -109,7 +109,7 @@ export function AddBookPage() {
             }}
             onClick={() => inputRef.current?.click()}
             disabled={importing}
-            className={`flex h-full min-h-[calc(100vh-12rem)] w-full flex-col items-center justify-center rounded-[2.25rem] border-2 border-dashed px-8 text-center transition ${
+            className={`flex h-full min-h-[calc(100vh-12rem)] w-full flex-col items-start justify-center rounded-[2.25rem] border-2 border-dashed px-8 text-left transition ${
               dragging
                 ? 'border-blue-500 bg-blue-50/80'
                 : 'border-slate-300 bg-gradient-to-b from-slate-50 to-white hover:border-slate-400'
@@ -118,12 +118,15 @@ export function AddBookPage() {
             <div className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white">
               {importing ? '正在导入...' : '选择或拖入 EPUB'}
             </div>
-            <p className="mt-6 text-[2rem] font-semibold text-slate-900">拖拽文件到这里，或者点击选择</p>
-            {error ? <p className="mt-6 text-base text-rose-600">{error}</p> : null}
+            <p className="mt-6 text-left text-[2rem] font-semibold text-slate-900">拖拽文件到这里，或者点击选择</p>
+            <p className="mt-4 max-w-2xl text-lg leading-8 text-slate-500">
+              这里只保留最直接的导入区域，支持 `.epub` 文件；导入后会自动解析封面、书名、作者和目录。
+            </p>
+            {error ? <p className="mt-6 text-left text-base text-rose-600">{error}</p> : null}
           </button>
         </section>
 
-        <footer className="mx-auto max-w-7xl px-6 pb-12 pt-16 text-slate-900">
+        <footer className="max-w-7xl px-6 pb-12 pt-16 text-slate-900">
           <div className="text-left">
             <p className="brand-kicker select-none">Kunde</p>
             <p className="mt-4 text-sm tracking-[0.22em] text-slate-500">本地阅读，如纸如墨</p>
